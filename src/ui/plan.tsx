@@ -1,6 +1,6 @@
 import type { Plan } from "../types.ts"
 import type { Palette } from "../theme.ts"
-import { currentStepIndex, planProgress, planTitle } from "../parse/plan.ts"
+import { planProgress, planTitle } from "../parse/plan.ts"
 import { CollapsibleLine } from "./line.tsx"
 
 export interface PlanSectionProps {
@@ -19,15 +19,17 @@ export interface PlanSectionProps {
 /**
  * "计划" block: parsed checklist with ASCII markers (`[ ]` / `[>]` / `[✓]`).
  *
- * - a current-step marker is only shown for tracked plans (checkbox / ✅ style);
- *   for a plain numbered list the model never reports progress, so claiming a
- *   current step would be wrong most of the time
+ * - `待办 x/y` is the model's own `todowrite` list: real statuses that move
+ *   while it works
+ * - `计划 x/y` is a text heuristic with check-off syntax; a current-step marker
+ *   is only shown for tracked plans, because a plain numbered list never
+ *   reports progress and claiming a current step would usually be wrong
  * - fully checked plans keep the header only (nothing left to list)
  * - clicking the header hides the plan until a newer one appears
  */
 export function PlanSection(props: PlanSectionProps) {
   const items = () => props.plan?.items ?? []
-  const currentIndex = () => (props.plan ? currentStepIndex(props.plan) : -1)
+  const currentIndex = () => props.plan?.currentIndex ?? -1
   const complete = () => (props.plan ? planProgress(props.plan).complete : false)
 
   return (

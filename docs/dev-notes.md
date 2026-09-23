@@ -26,7 +26,18 @@
 
 计时从 `session.tool.input.started` 起算，与面板显示的秒表一致。
 
-## 计划解析启发式（`src/parse/plan.ts`）
+## 真实待办（`src/parse/todos.ts`，首选数据源）
+
+- OpenCode V2 有全局 `todowrite` 工具（本集群实测 8 个会话用过 72 次）；模型每次调用带**完整清单**：
+  `{ todos: [{ content, status: "pending" | "in_progress" | "completed", priority }] }`
+- v2 消息里的 tool part 形状：`{ type: "tool", id, name, state: { status, input, content, metadata }, time }`
+  （注意是 `name`，不是 `state.input` 之外还有 `tool` 字段；v1 的 `part` 表用 `tool` 字段，两者都别混）
+- 提取规则：从最新消息往前找第一条带 `todowrite` part 且 `input` 可解析的消息，取该消息里最后一个 `todowrite` part（同一消息可能有多次调用）→ 这就是当前权威清单
+- `status === "completed"` → `[✓]`；`in_progress` 优先标 `[>]`，没有则第一条未完成；标题 `待办 x/y`
+- `source: "todo"` 的计划 `tracked` 恒为 true，因此不参与 `isSuperseded` 自动隐藏（只受手动 `[隐藏]` 影响）
+- 面板优先级：`extractTodos() ?? extractPlan()`（有真待办就不看文本启发式）
+
+## 计划解析启发式（`src/parse/plan.ts`，回退数据源）
 
 - 跳过 ``` / ~~~ 围栏代码块
 - 强信号：编号（`1.` / `1)` / `1、`）、复选框（`- [x]`）、`✅ ☑ ✔ ✓ ⏳ 🔄 ▶ ☐ ⬜` 前缀
@@ -37,13 +48,15 @@
 
 ### 诚实性规则（重要）
 
-- `tracked`：计划里只要出现勾选语法（checkbox / ✅ / ☑ 等）就为 true。**只有 tracked 才显示 `[>]` 当前步骤和 `x/y` 进度**——普通编号列表模型不会回来打勾，标"当前步骤"在常见场景下是假信息。
+- `source`：`"todo"` = 模型 `todowrite` 的真实状态；`"text"` = 文本启发式。面板优先 todo。
+- `tracked`：todo 恒为 true；文本计划里只要出现勾选语法（checkbox / ✅ / ☑ 等）就为 true。**只有 tracked 才显示 `[>]` 当前步骤和 `x/y` 进度**——普通编号列表模型不会回来打勾，标"当前步骤"在常见场景下是假信息。
+- `currentIndex`：提取时就定好（todo：in_progress 优先；文本：第一条未完成，非 tracked 为 -1），UI 直接读，不再重算。
 - `fromLatestAssistant`：来源消息是否为最新助手消息；普通编号列表 + 有更新消息 → 标题 `计划（可能过时）`。
-- `userMessagesAfter` + `isSuperseded()`：非勾选计划在来源之后出现 ≥2 条新用户消息（`SUPERSEDED_USER_MESSAGES`）→ 整块隐藏，认为属于已过去的任务。
+- `userMessagesAfter` + `isSuperseded()`：非勾选文本计划在来源之后出现 ≥2 条新用户消息（`SUPERSEDED_USER_MESSAGES`）→ 整块隐藏，认为属于已过去的任务。
 - `planVisible(plan, dismissedID)`：`isSuperseded` 或已被手动隐藏（按 messageID）→ 不渲染；新计划换 messageID，自动恢复。
 - `planProgress()`：`complete` = tracked 且全部打勾 → 只渲染标题，不列条目。
 - 不做持久化回显：计划只来自当前消息缓存，压缩/中断后消失即可。
-- 不做"关键词匹配自动推进步骤"——误报比现状更糟。
+- 不做"关键词匹配自动推进步骤"——误报比现状更糟；要真实进度就用 `todowrite`（模型自带，面板只读不注入）。
 
 ## 状态与重启恢复
 

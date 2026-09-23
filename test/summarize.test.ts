@@ -26,6 +26,20 @@ test("subagent shows agent and description", () => {
   assert.equal(summarizeTool("subagent", { agent: "explore", description: "find plugin docs" }), "explore: find plugin docs")
 })
 
+test("todowrite reports its progress", () => {
+  assert.equal(
+    summarizeTool("todowrite", {
+      todos: [
+        { content: "a", status: "completed" },
+        { content: "b", status: "in_progress" },
+        { content: "c", status: "pending" },
+      ],
+    }),
+    "1/3",
+  )
+  assert.equal(summarizeTool("todowrite", { todos: [] }), undefined)
+})
+
 test("execute falls back to its description or first code line", () => {
   assert.equal(summarizeTool("execute", { description: "批量读取文件" }), "批量读取文件")
   assert.equal(summarizeTool("execute", { code: "\n// 注释\nconst files = await tools.read({})\n" }), "const files = await tools.read({})")

@@ -1,7 +1,6 @@
 import assert from "node:assert/strict"
 import { test } from "node:test"
 import {
-  currentStepIndex,
   extractPlan,
   isSuperseded,
   lastUserText,
@@ -117,6 +116,8 @@ const plan = (overrides: Partial<Plan> = {}): Plan => ({
   fromLatestAssistant: true,
   tracked: true,
   userMessagesAfter: 0,
+  source: "text",
+  currentIndex: 1,
   ...overrides,
 })
 
@@ -163,15 +164,18 @@ test("planTitle reports progress honestly", () => {
   assert.equal(planTitle(plan()), "计划 1/3")
   assert.equal(planTitle(plan({ tracked: false, fromLatestAssistant: true })), "计划")
   assert.equal(planTitle(plan({ tracked: false, fromLatestAssistant: false })), "计划（可能过时）")
+  assert.equal(planTitle(plan({ source: "todo" })), "待办 1/3")
 })
 
-test("currentStepIndex only claims a step for tracked plans", () => {
-  assert.equal(currentStepIndex(plan()), 1)
-  assert.equal(currentStepIndex(plan({ tracked: false })), -1)
-  assert.equal(
-    currentStepIndex(plan({ items: [{ text: "a", done: true }, { text: "b", done: true }] })),
-    -1,
-  )
+test("extractPlan marks the current step only for tracked lists", () => {
+  const tracked: MessageLike[] = [
+    assistant("m1", "- [x] done one\n- [ ] next one\n- [ ] last one"),
+  ]
+  assert.equal(extractPlan(tracked, 10)?.currentIndex, 1)
+  assert.equal(extractPlan(tracked, 10)?.source, "text")
+
+  const plain: MessageLike[] = [assistant("m1", "1. one\n2. two")]
+  assert.equal(extractPlan(plain, 10)?.currentIndex, -1)
 })
 
 test("lastUserText returns the newest user message, truncated", () => {

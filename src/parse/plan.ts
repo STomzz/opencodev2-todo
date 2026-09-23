@@ -170,13 +170,17 @@ export function extractPlan(messages: readonly MessageLike[], maxItems: number):
       for (let next = index + 1; next < messages.length; next++) {
         if (messages[next]?.type === "user") userMessagesAfter++
       }
+      const items = parsed.items
+      const currentIndex = parsed.tracked ? items.findIndex((item) => !item.done) : -1
       return {
-        items: parsed.items,
+        items,
         messageID: message.id,
         fromPlanAgent,
         fromLatestAssistant: message.id === latestAssistantID,
         tracked: parsed.tracked,
         userMessagesAfter,
+        source: "text",
+        currentIndex,
       }
     }
   }
@@ -188,7 +192,8 @@ export const SUPERSEDED_USER_MESSAGES = 2
 
 /**
  * A plain list (no check-off syntax) stops being "the current plan" once the
- * user has moved on to other requests; tracked plans always stay.
+ * user has moved on to other requests. Tracked plans — including real
+ * `todowrite` todos, which the model keeps up to date — always stay.
  */
 export function isSuperseded(plan: Plan): boolean {
   return !plan.tracked && plan.userMessagesAfter >= SUPERSEDED_USER_MESSAGES
@@ -205,20 +210,14 @@ export function planProgress(plan: Plan): { done: number; total: number; complet
   return { done, total: plan.items.length, complete: plan.tracked && done === plan.items.length }
 }
 
-/** Section header: says how far along the plan is. */
+/** Section header: says where the plan came from and how far along it is. */
 export function planTitle(plan: Plan): string {
   if (plan.tracked) {
     const { done, total } = planProgress(plan)
-    return `计划 ${done}/${total}`
+    return plan.source === "todo" ? `待办 ${done}/${total}` : `计划 ${done}/${total}`
   }
   if (!plan.fromLatestAssistant) return "计划（可能过时）"
   return "计划"
-}
-
-/** The step the plan claims to be on; `-1` when the plan is not tracked. */
-export function currentStepIndex(plan: Plan): number {
-  if (!plan.tracked) return -1
-  return plan.items.findIndex((item) => !item.done)
 }
 
 /** Newest user message text, single-line and truncated. */

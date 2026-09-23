@@ -1,5 +1,7 @@
 /** Turns a tool name + input into a short, human-readable label/detail pair. Pure. */
 
+import { todosFromInput } from "../parse/todos.ts"
+
 const LABELS: Record<string, string> = {
   shell: "运行",
   bash: "运行",
@@ -19,6 +21,7 @@ const LABELS: Record<string, string> = {
   execute: "执行代码",
   code: "执行代码",
   browser: "浏览器",
+  todowrite: "更新待办",
 }
 
 export function toolLabel(name: string): string {
@@ -82,6 +85,12 @@ export function summarizeTool(name: string, input: unknown): string | undefined 
         return str(first, "header") ?? str(first, "question")
       }
       return undefined
+    }
+    case "todowrite": {
+      const todos = todosFromInput(input)
+      if (!todos) return undefined
+      const done = todos.filter((todo) => todo.status === "completed").length
+      return `${done}/${todos.length}`
     }
     case "execute":
     case "code": {

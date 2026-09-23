@@ -1,6 +1,7 @@
 import { createEffect } from "solid-js"
 import type { ActivityState, MessageLike, PanelOptions } from "../types.ts"
 import { extractPlan, lastUserText, planVisible } from "../parse/plan.ts"
+import { extractTodos } from "../parse/todos.ts"
 import { showUnknownHint } from "../state/activity.ts"
 import { palette } from "../theme.ts"
 import { GoalSection } from "./goal.tsx"
@@ -33,7 +34,8 @@ export function Panel(props: PanelProps) {
   })
 
   const messages = () => props.messages(props.sessionID) ?? []
-  const plan = () => extractPlan(messages(), props.options.maxPlanItems)
+  // Real todos win over text heuristics: they carry live statuses.
+  const plan = () => extractTodos(messages(), props.options.maxPlanItems) ?? extractPlan(messages(), props.options.maxPlanItems)
   const visiblePlan = () => {
     const parsed = plan()
     return parsed && planVisible(parsed, props.dismissed(props.sessionID)) ? parsed : undefined

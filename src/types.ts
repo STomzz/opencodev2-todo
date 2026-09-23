@@ -34,6 +34,9 @@ export interface PlanItem {
   readonly done: boolean
 }
 
+/** Where the plan came from: the model's own todo tool, or text heuristics. */
+export type PlanSource = "todo" | "text"
+
 /** A plan parsed from an assistant message. */
 export interface Plan {
   readonly items: readonly PlanItem[]
@@ -45,6 +48,9 @@ export interface Plan {
   readonly tracked: boolean
   /** User messages sent after the plan; a rising count means the plan belongs to an older task. */
   readonly userMessagesAfter: number
+  readonly source: PlanSource
+  /** Index of the step to mark with `[>]`, `-1` for none. */
+  readonly currentIndex: number
 }
 
 /** Resolved plugin options. */
@@ -69,6 +75,12 @@ export interface PanelOptions {
 export interface ContentPart {
   readonly type: string
   readonly text?: string
+  /** Tool parts: call id, tool name (v2 `name`, v1 `tool`), and its state. */
+  readonly id?: string
+  readonly name?: string
+  readonly tool?: string
+  readonly state?: { readonly status?: string; readonly input?: unknown }
+  readonly time?: { readonly created?: number; readonly ran?: number }
 }
 
 export interface MessageLike {
