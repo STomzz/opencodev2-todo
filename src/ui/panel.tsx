@@ -1,6 +1,6 @@
 import { createEffect } from "solid-js"
-import type { ActivityState, MessageLike, PanelOptions, Plan, PlanSnapshot } from "../types.ts"
-import { extractPlan, lastUserText, resolvePlan } from "../parse/plan.ts"
+import type { ActivityState, MessageLike, PanelOptions } from "../types.ts"
+import { extractPlan, lastUserText, planVisible } from "../parse/plan.ts"
 import { showUnknownHint } from "../state/activity.ts"
 import { palette } from "../theme.ts"
 import { GoalSection } from "./goal.tsx"
@@ -16,9 +16,9 @@ export interface PanelProps {
   readonly title: (sessionID: string) => string | undefined
   readonly running: (sessionID: string) => boolean
   readonly now: () => number
-  /** Durable fallback for plans whose source message left the cache. */
-  readonly snapshot: (sessionID: string) => PlanSnapshot | undefined
-  readonly rememberPlan: (sessionID: string, plan: Plan) => void
+  /** Message id of the plan this session hid by hand, if any. */
+  readonly dismissed: (sessionID: string) => string | undefined
+  readonly dismiss: (sessionID: string, messageID: string) => void
   /** Idempotent: syncs messages and restores a running activity once per session. */
   readonly ensure: (sessionID: string) => void
   readonly isExpanded: (key: string) => boolean
@@ -33,17 +33,14 @@ export function Panel(props: PanelProps) {
   })
 
   const messages = () => props.messages(props.sessionID) ?? []
-  const freshPlan = () => extractPlan(messages(), props.options.maxPlanItems)
-  const plan = () => resolvePlan(freshPlan(), props.snapshot(props.sessionID))
+  const plan = () => extractPlan(messages(), props.options.maxPlanItems)
+  const visiblePlan = () => {
+    const parsed = plan()
+    return parsed && planVisible(parsed, props.dismissed(props.sessionID)) ? parsed : undefined
+  }
   const request = () => lastUserText(messages(), props.options.goalChars)
   const sessionTitle = () => props.title(props.sessionID)
   const colors = () => palette(props.theme)
-
-  // Persist every newly parsed plan so it survives compaction of its source message.
-  createEffect(() => {
-    const parsed = freshPlan()
-    if (parsed) props.rememberPlan(props.sessionID, parsed)
-  })
 
   return (
     <box flexDirection="column" gap={0}>
@@ -74,12 +71,15 @@ export function Panel(props: PanelProps) {
       ) : null}
       {props.options.showPlan ? (
         <PlanSection
-          plan={plan().plan}
-          fromSnapshot={plan().fromSnapshot}
+          plan={visiblePlan()}
+          onDismiss={() => {
+            const parsed = plan()
+            if (parsed) props.dismiss(props.sessionID, parsed.messageID)
+          }}
           palette={colors()}
           maxChars={props.options.maxChars}
           collapseChars={props.options.collapseChars}
-          keyPrefix={`${props.sessionID}:plan:${plan().plan?.messageID ?? "none"}`}
+          keyPrefix={`${props.sessionID}:plan:${visiblePlan()?.messageID ?? "none"}`}
           isExpanded={props.isExpanded}
           toggleExpanded={props.toggleExpanded}
         />

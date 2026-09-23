@@ -3,12 +3,15 @@ import { test } from "node:test"
 import {
   currentStepIndex,
   extractPlan,
+  isSuperseded,
   lastUserText,
   parsePlanList,
+  planProgress,
   planTitle,
-  resolvePlan,
+  planVisible,
+  SUPERSEDED_USER_MESSAGES,
 } from "../src/parse/plan.ts"
-import type { MessageLike, Plan, PlanSnapshot } from "../src/types.ts"
+import type { MessageLike, Plan } from "../src/types.ts"
 
 const texts = (text: string, max = 10) => parsePlanList(text, max)?.items.map((item) => item.text)
 
@@ -113,40 +116,53 @@ const plan = (overrides: Partial<Plan> = {}): Plan => ({
   fromPlanAgent: false,
   fromLatestAssistant: true,
   tracked: true,
+  userMessagesAfter: 0,
   ...overrides,
 })
 
-const snapshot = (overrides: Partial<PlanSnapshot> = {}): PlanSnapshot => ({
-  messageID: "old",
-  items: [{ text: "x", done: false }],
-  fromPlanAgent: false,
-  tracked: false,
-  savedAt: 1,
-  ...overrides,
+test("extractPlan counts user messages sent after the plan", () => {
+  const messages: MessageLike[] = [
+    { id: "u1", type: "user", text: "request" },
+    assistant("m1", "1. one\n2. two"),
+    { id: "u2", type: "user", text: "follow up" },
+    assistant("m2", "no list in this one"),
+    { id: "u3", type: "user", text: "and another" },
+  ]
+  assert.equal(extractPlan(messages, 10)?.userMessagesAfter, 2)
 })
 
-test("resolvePlan prefers the fresh plan and falls back to the snapshot", () => {
-  const fresh = plan()
-  const first = resolvePlan(fresh, snapshot())
-  assert.equal(first.fromSnapshot, false)
-  assert.equal(first.plan?.messageID, "m1")
-
-  const second = resolvePlan(undefined, snapshot())
-  assert.equal(second.fromSnapshot, true)
-  assert.equal(second.plan?.messageID, "old")
-  assert.equal(second.plan?.fromLatestAssistant, false)
-
-  const third = resolvePlan(undefined, undefined)
-  assert.equal(third.plan, undefined)
-  assert.equal(third.fromSnapshot, false)
+test("isSuperseded hides plain lists once the user moved on", () => {
+  const plain = plan({ tracked: false, userMessagesAfter: SUPERSEDED_USER_MESSAGES })
+  assert.equal(isSuperseded(plain), true)
+  assert.equal(isSuperseded(plan({ tracked: false, userMessagesAfter: SUPERSEDED_USER_MESSAGES - 1 })), false)
+  // Tracked plans report their own progress, so they are never auto-hidden.
+  assert.equal(isSuperseded(plan({ tracked: true, userMessagesAfter: 9 })), false)
 })
 
-test("planTitle reports source and progress honestly", () => {
-  assert.equal(planTitle(plan(), false), "计划 1/3")
-  assert.equal(planTitle(plan({ tracked: false, fromLatestAssistant: true }), false), "计划")
-  assert.equal(planTitle(plan({ tracked: false, fromLatestAssistant: false }), false), "计划（可能过时）")
-  assert.equal(planTitle(plan({ tracked: false }), true), "计划（上次）")
-  assert.equal(planTitle(plan(), true), "计划（上次）")
+test("planVisible also honours a manual dismiss", () => {
+  const plain = plan({ tracked: false })
+  assert.equal(planVisible(plain, "other"), true)
+  assert.equal(planVisible(plain, "m1"), false)
+  assert.equal(planVisible(plan({ tracked: false, userMessagesAfter: 5 }), undefined), false)
+})
+
+test("planProgress reports done/total and completion", () => {
+  assert.deepEqual(planProgress(plan()), { done: 1, total: 3, complete: false })
+  assert.deepEqual(
+    planProgress(plan({ items: [{ text: "a", done: true }, { text: "b", done: true }] })),
+    { done: 2, total: 2, complete: true },
+  )
+  // An untracked list may contain ✅ items but is never treated as "complete".
+  assert.deepEqual(
+    planProgress(plan({ tracked: false, items: [{ text: "a", done: true }] })),
+    { done: 1, total: 1, complete: false },
+  )
+})
+
+test("planTitle reports progress honestly", () => {
+  assert.equal(planTitle(plan()), "计划 1/3")
+  assert.equal(planTitle(plan({ tracked: false, fromLatestAssistant: true })), "计划")
+  assert.equal(planTitle(plan({ tracked: false, fromLatestAssistant: false })), "计划（可能过时）")
 })
 
 test("currentStepIndex only claims a step for tracked plans", () => {

@@ -13,7 +13,7 @@
  * All pure; unit tested.
  */
 
-import type { MessageLike, Plan, PlanItem, PlanSnapshot } from "../types.ts"
+import type { MessageLike, Plan, PlanItem } from "../types.ts"
 
 const FENCE = /^\s*(```|~~~)/
 const CHECKBOX = /^\s*[-*+]\s+\[([ xX])\]\s+(.+)$/
@@ -166,43 +166,50 @@ export function extractPlan(messages: readonly MessageLike[], maxItems: number):
       if (pass === 0 && !fromPlanAgent) continue
       const parsed = listFor(message, maxItems)
       if (!parsed) continue
+      let userMessagesAfter = 0
+      for (let next = index + 1; next < messages.length; next++) {
+        if (messages[next]?.type === "user") userMessagesAfter++
+      }
       return {
         items: parsed.items,
         messageID: message.id,
         fromPlanAgent,
         fromLatestAssistant: message.id === latestAssistantID,
         tracked: parsed.tracked,
+        userMessagesAfter,
       }
     }
   }
   return undefined
 }
 
-/** Prefers the freshly parsed plan, otherwise falls back to the durable snapshot. */
-export function resolvePlan(
-  fresh: Plan | undefined,
-  snapshot: PlanSnapshot | undefined,
-): { plan: Plan | undefined; fromSnapshot: boolean } {
-  if (fresh) return { plan: fresh, fromSnapshot: false }
-  if (!snapshot) return { plan: undefined, fromSnapshot: false }
-  return {
-    plan: {
-      items: snapshot.items,
-      messageID: snapshot.messageID,
-      fromPlanAgent: snapshot.fromPlanAgent,
-      fromLatestAssistant: false,
-      tracked: snapshot.tracked,
-    },
-    fromSnapshot: true,
-  }
+/** How many newer user messages mean the plan belongs to an older task. */
+export const SUPERSEDED_USER_MESSAGES = 2
+
+/**
+ * A plain list (no check-off syntax) stops being "the current plan" once the
+ * user has moved on to other requests; tracked plans always stay.
+ */
+export function isSuperseded(plan: Plan): boolean {
+  return !plan.tracked && plan.userMessagesAfter >= SUPERSEDED_USER_MESSAGES
 }
 
-/** Section header: says where the plan came from and how far along it is. */
-export function planTitle(plan: Plan, fromSnapshot: boolean): string {
-  if (fromSnapshot) return "计划（上次）"
+/** Whether the section should render at all: not superseded, not dismissed by hand. */
+export function planVisible(plan: Plan, dismissedID: string | undefined): boolean {
+  return !isSuperseded(plan) && plan.messageID !== dismissedID
+}
+
+/** Progress of a tracked plan; `complete` means there is nothing left to list. */
+export function planProgress(plan: Plan): { done: number; total: number; complete: boolean } {
+  const done = plan.items.filter((item) => item.done).length
+  return { done, total: plan.items.length, complete: plan.tracked && done === plan.items.length }
+}
+
+/** Section header: says how far along the plan is. */
+export function planTitle(plan: Plan): string {
   if (plan.tracked) {
-    const done = plan.items.filter((item) => item.done).length
-    return `计划 ${done}/${plan.items.length}`
+    const { done, total } = planProgress(plan)
+    return `计划 ${done}/${total}`
   }
   if (!plan.fromLatestAssistant) return "计划（可能过时）"
   return "计划"

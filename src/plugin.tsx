@@ -1,15 +1,12 @@
 import { Plugin } from "@opencode/plugin/tui"
 import { resolveOptions } from "./options.ts"
-import type { ActivityState, EventLike, MessageLike, Plan, PlanSnapshot } from "./types.ts"
+import type { ActivityState, EventLike, MessageLike } from "./types.ts"
 import { reduceActivity } from "./state/activity.ts"
 import { hydrateActivity } from "./state/hydrate.ts"
 import { summarizeTool } from "./util/summarize.ts"
 import { sessionIDOf, toActivityEvent } from "./util/events.ts"
-import { durableStore, memoryStore, writeStore } from "./storage.ts"
+import { memoryStore, writeStore } from "./storage.ts"
 import { Panel } from "./ui/panel.tsx"
-
-/** Durable plan snapshots are pruned to this many sessions. */
-const SNAPSHOT_LIMIT = 40
 
 /**
  * Sidebar activity panel.
@@ -36,26 +33,11 @@ export default Plugin.define({
     const [activities, updateActivities] = memoryStore(context, "activity-state", {} as Record<string, ActivityState>)
     const [clock, updateClock] = memoryStore(context, "activity-clock", { now: Date.now() })
     const [expanded, updateExpanded] = memoryStore(context, "activity-expanded", {} as Record<string, boolean>)
-    // Durable: a plan survives compaction even when its source message leaves the cache.
-    const planStore = durableStore(context, "activity-plan", {} as Record<string, PlanSnapshot>)
-    const planSnapshots = planStore[0]
+    const [dismissed, updateDismissed] = memoryStore(context, "activity-dismissed", {} as Record<string, string>)
 
-    const rememberPlan = (sessionID: string, plan: Plan) => {
-      const existing = planSnapshots[sessionID]
-      if (existing?.messageID === plan.messageID) return
-      writeStore(planStore, (draft) => {
-        draft[sessionID] = {
-          messageID: plan.messageID,
-          items: plan.items.map((item) => ({ text: item.text, done: item.done })),
-          fromPlanAgent: plan.fromPlanAgent,
-          tracked: plan.tracked,
-          savedAt: Date.now(),
-        }
-        const keys = Object.keys(draft)
-        if (keys.length > SNAPSHOT_LIMIT) {
-          keys.sort((left, right) => (draft[left]?.savedAt ?? 0) - (draft[right]?.savedAt ?? 0))
-          for (const key of keys.slice(0, keys.length - SNAPSHOT_LIMIT)) delete draft[key]
-        }
+    const dismissPlan = (sessionID: string, messageID: string) => {
+      writeStore([dismissed, updateDismissed], (draft) => {
+        draft[sessionID] = messageID
       })
     }
 
@@ -119,8 +101,8 @@ export default Plugin.define({
           title={(sessionID) => context.data.session.get(sessionID)?.title}
           running={(sessionID) => context.data.session.status(sessionID) === "running"}
           now={() => clock.now}
-          snapshot={(sessionID) => planSnapshots[sessionID]}
-          rememberPlan={rememberPlan}
+          dismissed={(sessionID) => dismissed[sessionID]}
+          dismiss={dismissPlan}
           ensure={ensure}
           isExpanded={(key) => expanded[key] === true}
           toggleExpanded={(key) =>

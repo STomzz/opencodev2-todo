@@ -39,16 +39,16 @@
 
 - `tracked`：计划里只要出现勾选语法（checkbox / ✅ / ☑ 等）就为 true。**只有 tracked 才显示 `[>]` 当前步骤和 `x/y` 进度**——普通编号列表模型不会回来打勾，标"当前步骤"在常见场景下是假信息。
 - `fromLatestAssistant`：来源消息是否为最新助手消息；普通编号列表 + 有更新消息 → 标题 `计划（可能过时）`。
-- `resolvePlan(fresh, snapshot)`：消息缓存里解析不到时回退到持久化快照，标题 `计划（上次）`。
+- `userMessagesAfter` + `isSuperseded()`：非勾选计划在来源之后出现 ≥2 条新用户消息（`SUPERSEDED_USER_MESSAGES`）→ 整块隐藏，认为属于已过去的任务。
+- `planVisible(plan, dismissedID)`：`isSuperseded` 或已被手动隐藏（按 messageID）→ 不渲染；新计划换 messageID，自动恢复。
+- `planProgress()`：`complete` = tracked 且全部打勾 → 只渲染标题，不列条目。
+- 不做持久化回显：计划只来自当前消息缓存，压缩/中断后消失即可。
 - 不做"关键词匹配自动推进步骤"——误报比现状更糟。
 
 ## 状态与重启恢复
 
-- 活动状态放在 `context.storage.memory`（热重载共享、TUI 退出即丢），键为 `activity-state` / `activity-clock` / `activity-expanded`（短横线，不用冒号，原因见「坑」）。
-- 计划快照放在 `context.storage.store`（durable，跨重启），键 `activity-plan`，按 `savedAt` 保留最近 40 个会话；只在 messageID 变化时写入，避免抖动。
-  - 实测落盘位置：`~/.local/state/opencode/<channel>/tui/plugin.<插件id>.<键>.json`（本插件 = `~/.local/state/opencode/latest/tui/plugin.activity-panel.activity-plan.json`）。
-  - 宿主实现对每次 mutation 加文件锁并写整个 JSON，同时 `fs.watch` 该目录（50ms 防抖）在多 TUI 实例间同步；所以面板里的读取是响应式的，写入是"整文件替换"。
-  - 实测：消息一出现（21:47:22）快照即写入，无需重载 → 消息缓存读取确实是响应式的。
+- 活动状态放在 `context.storage.memory`（热重载共享、TUI 退出即丢），键为 `activity-state` / `activity-clock` / `activity-expanded` / `activity-dismissed`（短横线，不用冒号，原因见「坑」）。
+- 面板不写任何 durable 存储：计划只来自消息缓存，压缩/中断后消失是预期行为（早前的快照回显方案已移除，`src/storage.ts` 只保留 guarded memory 包装）。
 - 1s 定时器只更新 `clock.now`，用于秒表与存活判断。
 - `showUnknownHint()`：会话 running 但活动为 idle 且超过 8s 没收到已识别事件 → 显示 `? 运行中（未识别事件）`（升级自检）。
 - TUI 重启后：面板挂载时调 `data.session.message.sync(sessionID)`，从最新助手消息里找 `status === "running" | "streaming"` 的工具 part 恢复当前动作（`src/state/hydrate.ts`）。
@@ -64,6 +64,7 @@
 ## 渲染约定
 
 - 计划标记：`[ ]` 待办 / `[>]` 当前 / `[✓]` 已完成（不用 ☐☑ 等字形，避免终端字体缺字显示成方框）。
+- 计划标题尾部带 `[隐藏]`，整个标题可点（`onMouseDown` → `dismissed[sessionID] = messageID`）；勾选型计划全部完成时只渲染标题行。
 - 长文本（> `collapseChars`，默认 56）默认**折叠成一行**：字符级截断加 `…`，同时 `height=1` + `overflow="hidden"` 保证即使侧栏更窄也只占一行。
 - **点击折叠行切换展开/收起**：状态存在 `context.storage.memory("activity-expanded")` 里，数据键为 `<sessionID>:<区块>:...`（计划条目含 messageID 与序号，换消息后自动失效）。
   - 判断逻辑抽在纯函数 `src/util/collapse.ts`（有单测）；**展开后仍然保留点击处理**，所以同一行点一下展开、再点收起。
@@ -73,7 +74,7 @@
 
 ## 已知局限（2026-09-23 评估后保留的）
 
-- 计划是**文本快照**，不是权威 todo：模型不回来打勾时（普通编号列表），面板只显示列表与 `(可能过时)`，不假装知道当前步骤；要严格逐项推进只能给 V2 加 `todo_write` 工具（改变模型可见面，暂不做）。
+- 计划是**文本快照**，不是权威 todo：模型不回来打勾时（普通编号列表），面板只显示列表并标 `(可能过时)`，且换任务（≥2 条新用户消息）后整块隐藏，不假装知道当前步骤；要严格逐项推进只能给 V2 加 `todo_write` 工具（改变模型可见面，暂不做）。
 - 任务目标 = 会话标题 + 最新用户消息，多轮长任务的早期约束会缺失。
 - 重启恢复只能覆盖"正在运行的工具"；若重启发生在模型思考/生成回复期间，会短暂显示空闲，直到下一个事件。
 - 冷门工具的摘要可能为空（只显示工具名）；耗时为 started→ended 墙钟，含排队/权限等待。
@@ -82,9 +83,9 @@
 
 ## 坑 / 注意事项
 
-- **storage 键不能含冒号**：段名规则是 `^[a-zA-Z0-9][a-zA-Z0-9._-]*$`，且拒绝 `.` / `..`。`context.storage.store("activity:plan", …)` 会在 **setup 阶段直接抛错**，宿主记 `plugin operation failed ... stage=setup`，整个插件不加载（面板消失）。所有 store 现在都走 `src/storage.ts` 的 guarded 包装：durable 失败退 memory，memory 失败退 inert，保证 setup 永不因存储失败而挂掉。
+- **storage 键不能含冒号**：段名规则是 `^[a-zA-Z0-9][a-zA-Z0-9._-]*$`，且拒绝 `.` / `..`。`context.storage.store("activity:plan", …)` 会在 **setup 阶段直接抛错**，宿主记 `plugin operation failed ... stage=setup`，整个插件不加载（面板消失）。所有 store 现在都走 `src/storage.ts` 的 guarded 包装：memory 被拒就退 inert，保证 setup 永不因存储失败而挂掉。
   - 排查手法：`grep "activity-panel" ~/.local/share/opencode/log/opencode.log | grep WARN`；点开看 `stage=setup` 后面的 error 文案。
-- `context.storage.store` 的初始值/写入值必须是 **JSON 兼容的普通对象**（`JSON.stringify` 能往返），勿放函数、类实例、`undefined`。
+- 不用 durable 存储了，但留个档：`context.storage.store` 落盘在 `~/.local/state/opencode/<channel>/tui/plugin.<插件id>.<键>.json`，每次 mutation 加文件锁整写，`fs.watch` 在多 TUI 实例间同步；值必须是 **JSON 兼容的普通对象**。早前的快照方案在本地留下过 `plugin.bnu.activity-panel.activity-plan.json` / `plugin.activity-panel.activity-plan.json`，不再被读取（是否删除由用户决定）。
 - `session.tool.called.data.input` 是对象；`SessionMessageToolStateStreaming.input` 是**字符串**（半截 JSON），恢复时不要当对象解析。
 - 侧栏宽度不可知：折叠行用 `height=1` + `overflow="hidden"` 裁剪成一行；展开靠 `wrapMode="word"` 自动换行。
 - 面板渲染不能抛异常：事件回调整体 try/catch，避免拖垮宿主。

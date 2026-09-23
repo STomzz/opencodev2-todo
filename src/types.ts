@@ -43,15 +43,8 @@ export interface Plan {
   readonly fromLatestAssistant: boolean
   /** The plan uses check-off syntax (checkbox / ✅ / ☑), so a "current step" is meaningful. */
   readonly tracked: boolean
-}
-
-/** Durable fallback for a plan whose source message left the message cache (compaction). */
-export interface PlanSnapshot {
-  readonly messageID: string
-  readonly items: readonly PlanItem[]
-  readonly fromPlanAgent: boolean
-  readonly tracked: boolean
-  readonly savedAt: number
+  /** User messages sent after the plan; a rising count means the plan belongs to an older task. */
+  readonly userMessagesAfter: number
 }
 
 /** Resolved plugin options. */

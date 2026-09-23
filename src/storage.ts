@@ -6,7 +6,7 @@
  * - a rejected key throws during plugin `setup`, which would disable the panel
  *
  * These wrappers keep `setup` alive no matter what storage does; the worst case
- * is that snapshot/expanded state stops updating.
+ * is that a piece of panel state stops updating.
  */
 
 import type { Context } from "@opencode/plugin/tui/context"
@@ -20,15 +20,6 @@ export function memoryStore<Value extends object>(context: Context, key: string,
     return context.storage.memory(key, { initial })
   } catch {
     return inert(initial)
-  }
-}
-
-/** Durable store; falls back to memory, then to an inert store. */
-export function durableStore<Value extends object>(context: Context, key: string, initial: Value): WritableStore<Value> {
-  try {
-    return context.storage.store(key, { initial })
-  } catch {
-    return memoryStore(context, key, initial)
   }
 }
 
