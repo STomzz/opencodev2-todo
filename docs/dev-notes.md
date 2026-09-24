@@ -76,8 +76,8 @@
 
 ## 渲染约定
 
-- 栏目标题统一为 `# 标签`（`src/ui/heading.tsx`，`SECTION_MARK = "#"`）——纯 ASCII，避免终端字体缺字；之前裸标题会和下面正式内容糊在一起。
-- 计划标题行形如 `# 计划 2/6  [隐藏]`，整行可点（`onMouseDown` → `dismissed[sessionID] = messageID`）；勾选型计划全部完成时只渲染标题行。
+- 栏目标题统一为 ` o 标签`（`src/ui/heading.tsx`，`SECTION_MARK = " o "`，两侧各一个空格）——纯 ASCII，避免终端字体缺字；之前裸标题会和下面正式内容糊在一起。
+- 计划标题行形如 ` o 计划 2/6  [隐藏]`，整行可点（`onMouseDown` → `dismissed[sessionID] = messageID`）；勾选型计划全部完成时只渲染标题行。
 - 计划标记：`[ ]` 待办 / `[>]` 当前 / `[✓]` 已完成（不用 ☐☑ 等字形，避免终端字体缺字显示成方框）。
 - 长文本（> `collapseChars`，默认 56）默认**折叠成一行**：字符级截断加 `…`，同时 `height=1` + `overflow="hidden"` 保证即使侧栏更窄也只占一行。
 - **点击折叠行切换展开/收起**：状态存在 `context.storage.memory("activity-expanded")` 里，数据键为 `<sessionID>:<区块>:...`（计划条目含 messageID 与序号，换消息后自动失效）。
