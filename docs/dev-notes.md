@@ -8,6 +8,7 @@
   - 否则：在目录里找 `tui.*` 文件。
 - 因此入口放在**包根目录** `tui.tsx`，同时 `exports["./tui"] = "./tui.tsx"`，两种模式都命中同一文件。
 - 兜底：若 cli.json 对本地目录解析不顺，把目录软链到 `~/.config/opencode/plugins/activity-panel` 走自动发现。
+- 同一个包目录还有**服务端插件**入口（根导出 `"."` → `index.ts`），由 `~/.config/opencode/opencode.json(c)` 的 `plugins` 加载，用于注册 V2 版 `todowrite`；CLI 侧只认 `./tui`，互不干扰。
 
 ## 事件映射（session 活动）
 
@@ -28,14 +29,25 @@
 
 ## 真实待办（`src/parse/todos.ts`，首选数据源）
 
-- OpenCode V2 有全局 `todowrite` 工具（本集群实测 8 个会话用过 72 次）；模型每次调用带**完整清单**：
-  `{ todos: [{ content, status: "pending" | "in_progress" | "completed", priority }] }`
+- V2 构建本身**不带** `todowrite`（2026-09 实测：调用报 `No tool named "todowrite" is currently available`，二进制里无该字符串，官方 Tools 文档也没有）；本仓库服务端插件（`index.ts`）把 V1 的它注册回来，面板只读不注入。模型每次调用带**完整清单**：
+  `{ todos: [{ content, status: "pending" | "in_progress" | "completed" | "cancelled", priority }] }`
 - v2 消息里的 tool part 形状：`{ type: "tool", id, name, state: { status, input, content, metadata }, time }`
   （注意是 `name`，不是 `state.input` 之外还有 `tool` 字段；v1 的 `part` 表用 `tool` 字段，两者都别混）
 - 提取规则：从最新消息往前找第一条带 `todowrite` part 且 `input` 可解析的消息，取该消息里最后一个 `todowrite` part（同一消息可能有多次调用）→ 这就是当前权威清单
-- `status === "completed"` → `[✓]`；`in_progress` 优先标 `[>]`，没有则第一条未完成；标题 `待办 x/y`
+- `status === "completed"` → `[✓]`；`cancelled` → `[-]`（保持位置，但永远不当"当前"）；其余按 `in_progress` 优先标 `[>]`，没有则第一条未完成（跳过已取消）；标题 `待办 x/y`
 - `source: "todo"` 的计划 `tracked` 恒为 true，因此不参与 `isSuperseded` 自动隐藏（只受手动 `[隐藏]` 影响）
 - 面板优先级：`extractTodos() ?? extractPlan()`（有真待办就不看文本启发式）；`planSource: "todo"` 时直接跳过文本回退，宁可不显示
+
+## V2 待办工具（服务端插件 `index.ts`）
+
+- 背景：V2 没有 todo 工具 → 模型没有地方写真实进度、面板 `待办 x/y` 永远点不亮。方案是把 V1（`packages/opencode/src/tool/todo.ts` + `todowrite.txt`）原样搬回来。
+- 注册：`Plugin.define({ id, setup })`（`@opencode/plugin` 的 promise 入口）→ `ctx.tool.transform((editor) => editor.add({...}))`；`input` 是普通 JSON Schema（V1 zod 的等价物），`execute` 返回 `{ content: JSON.stringify(todos, null, 2), metadata: { todos } }`（与 V1 输出一致）。
+- **必须 `options: { codemode: false }`**：默认注册进的是 Code Mode 目录，模型只能在 `execute` 里 `tools.todowrite(...)`，消息里只留 `execute` 外壳——面板看不到。`codemode: false` 让它成为直连工具，调用落成顶层 `name: "todowrite"` part，面板零改动可用。
+- 权限：`options.permission: "todowrite"` + 配置里 `{ "action": "todowrite", "resource": "*", "effect": "allow" }`，否则每次调用要确认。
+- 语义与 V1 一致：整表替换、不增量；空数组 = 清空（面板会隐藏）。
+- 验证：`opencode run --auto "请调用 todowrite…"` → 消息里应出现顶层 `todowrite` part；`extractTodos` 应返回 `source: "todo"`；日志里 `role=server` 的 plugin 加载无 warn。
+- 取舍：模型可见工具面多一个工具（首次请求前缀变化、之后缓存照常命中）；描述文本每请求占少量 token。面板本身仍是零 prompt 影响。
+- 描述文本在 `src/todo/description.ts`（V1 原文），schema/校验/格式化在 `src/todo/tool.ts`（纯函数，有单测）。
 
 ## 计划解析启发式（`src/parse/plan.ts`，回退数据源）
 
@@ -56,13 +68,13 @@
 
 - `source`：`"todo"` = 模型 `todowrite` 的真实状态；`"text"` = 文本启发式。面板优先 todo。
 - `tracked`：todo 恒为 true；文本计划里只要出现勾选语法（checkbox / ✅ / ☑ 等）就为 true。**只有 tracked 才显示 `[>]` 当前步骤和 `x/y` 进度**——普通编号列表模型不会回来打勾，标"当前步骤"在常见场景下是假信息。
-- `currentIndex`：提取时就定好（todo：in_progress 优先；文本：第一条未完成，非 tracked 为 -1），UI 直接读，不再重算。
+- `currentIndex`：提取时就定好（todo：in_progress 优先；文本：第一条未完成，非 tracked 为 -1；两边都跳过 `cancelled`），UI 直接读，不再重算。
 - `fromLatestAssistant`：来源消息是否为最新助手消息；普通编号列表 + 有更新消息 → 标题 `计划（可能过时）`。
 - `userMessagesAfter` + `isSuperseded()`：非勾选文本计划在来源之后出现 ≥2 条新用户消息（`SUPERSEDED_USER_MESSAGES`）→ 整块隐藏，认为属于已过去的任务。
 - `planVisible(plan, dismissedID)`：`isSuperseded` 或已被手动隐藏（按 messageID）→ 不渲染；新计划换 messageID，自动恢复。
 - `planProgress()`：`complete` = tracked 且全部打勾 → 只渲染标题，不列条目。
 - 不做持久化回显：计划只来自当前消息缓存，压缩/中断后消失即可。
-- 不做"关键词匹配自动推进步骤"——误报比现状更糟；要真实进度就用 `todowrite`（模型自带，面板只读不注入）。
+- 不做"关键词匹配自动推进步骤"——误报比现状更糟；要真实进度就用 `todowrite`（由本仓库服务端插件提供，面板只读不注入）。
 
 ## 状态与重启恢复
 
@@ -84,7 +96,7 @@
 
 - 栏目标题统一为 ` o 标签`（`src/ui/heading.tsx`，`SECTION_MARK = " o "`，两侧各一个空格）——纯 ASCII，避免终端字体缺字；之前裸标题会和下面正式内容糊在一起。
 - 计划标题行形如 ` o 计划 2/6  [隐藏]`，整行可点（`onMouseDown` → `dismissed[sessionID] = messageID`）；勾选型计划全部完成时只渲染标题行。
-- 计划标记：`[ ]` 待办 / `[>]` 当前 / `[✓]` 已完成（不用 ☐☑ 等字形，避免终端字体缺字显示成方框）。
+- 计划标记：`[ ]` 待办 / `[>]` 当前 / `[✓]` 已完成 / `[-]` 已取消（不用 ☐☑ 等字形，避免终端字体缺字显示成方框）。
 - 长文本（> `collapseChars`，默认 56）默认**折叠成一行**：字符级截断加 `…`，同时 `height=1` + `overflow="hidden"` 保证即使侧栏更窄也只占一行。
 - **点击折叠行切换展开/收起**：状态存在 `context.storage.memory("activity-expanded")` 里，数据键为 `<sessionID>:<区块>:...`（计划条目含 messageID 与序号，换消息后自动失效）。
   - 判断逻辑抽在纯函数 `src/util/collapse.ts`（有单测）；**展开后仍然保留点击处理**，所以同一行点一下展开、再点收起。
@@ -94,7 +106,7 @@
 
 ## 已知局限（2026-09-23 评估后保留的）
 
-- 计划是**文本快照**，不是权威 todo：模型不回来打勾时（普通编号列表），面板只显示列表并标 `(可能过时)`，且换任务（≥2 条新用户消息）后整块隐藏，不假装知道当前步骤；要严格逐项推进只能给 V2 加 `todo_write` 工具（改变模型可见面，暂不做）。
+- 计划是**文本快照**，不是权威 todo：模型不回来打勾时（普通编号列表），面板只显示列表并标 `(可能过时)`，且换任务（≥2 条新用户消息）后整块隐藏，不假装知道当前步骤；严格逐项推进用服务端插件注册的 `todowrite`（见上文，模型可见面会变，已按需开启）。
 - 任务目标 = 会话标题 + 最新用户消息，多轮长任务的早期约束会缺失。
 - 重启恢复只能覆盖"正在运行的工具"；若重启发生在模型思考/生成回复期间，会短暂显示空闲，直到下一个事件。
 - 冷门工具的摘要可能为空（只显示工具名）；耗时为 started→ended 墙钟，含排队/权限等待。

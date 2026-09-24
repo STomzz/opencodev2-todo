@@ -1,8 +1,13 @@
 # opencode-activity-panel
 
-OpenCode V2 的 **CLI 插件**：在右侧栏显示当前会话的「任务目标 / 当前动作 / 待办或计划」，随时知道 opencode 在做什么、走到哪一步了。
+OpenCode V2 的插件仓库，包含**两个可独立使用的插件**：
 
-**零 prompt 影响**：不注册工具、不加 hook、不注入系统提示词、不改历史。只读服务端事件流 + 本地消息缓存，因此不消耗 token，也不影响 prompt 缓存命中。
+| 插件 | 角色 | 加载配置 | 作用 |
+|---|---|---|---|
+| **活动面板** | CLI（TUI） | `cli.json` | 右侧栏显示当前会话的「任务目标 / 当前动作 / 待办或计划」 |
+| **`todowrite`（V2 版）** | 服务端 | `opencode.json(c)` | 把 V1 的待办工具还给模型，让面板的 `待办 x/y` 有真实数据源 |
+
+活动面板**零 prompt 影响**：不注册工具、不加 hook、不注入系统提示词、不改历史。只读服务端事件流 + 本地消息缓存，因此不消耗 token，也不影响 prompt 缓存命中。服务端 `todowrite` 插件会（有意地）改变模型可见工具面，取舍见下文。
 
 ## 显示内容
 
@@ -10,13 +15,13 @@ OpenCode V2 的 **CLI 插件**：在右侧栏显示当前会话的「任务目�
 |---|---|---|
 | 任务 | 会话标题 + 最近一条用户消息 | 准确 |
 | 当前动作 | `session.*` 事件流（思考 / 生成回复 / 工具调用 + 计时） | 准确 |
-| 待办 / 计划 | ① 模型自己的 `todowrite` 待办（首选）② 助手文本里**看起来像计划**的列表（回退，有门槛） | ① 真实状态，会随执行走动 ② 启发式（误报宁愿不显示） |
+| 待办 / 计划 | ① 模型自己的 `todowrite` 待办（由本仓库服务端插件提供，首选）② 助手文本里**看起来像计划**的列表（回退，有门槛） | ① 真实状态，会随执行走动 ② 启发式（误报宁愿不显示） |
 
 计划标题会如实说明来源，不做过度承诺：
 
 | 标题 | 含义 |
 |---|---|
-| `待办 2/5` | 来自模型的 `todowrite` 工具：状态真实，当前步骤标 `[>]`，勾会随执行打上 |
+| `待办 2/5` | 来自模型的 `todowrite` 工具（本仓库服务端插件注册）：状态真实，当前步骤标 `[>]`，勾会随执行打上，取消项标 `[-]` |
 | `计划 2/5` | 文本启发式：计划里带勾选语法（`[ ]`/`[x]`/`✅`），进度取决于模型是否回写 |
 | `计划` | 普通编号列表且来自最新助手消息，不标"当前步骤" |
 | `计划（可能过时）` | 普通编号列表，但之后已有更新的助手消息（还没到自动隐藏的程度） |
@@ -32,6 +37,8 @@ OpenCode V2 的 **CLI 插件**：在右侧栏显示当前会话的「任务目�
 当会话显示 `running` 但长时间收不到已识别事件时，「当前动作」会显示 `? 运行中（未识别事件）` —— 这是 OpenCode 升级导致事件名变化的信号，而不是模型卡住。
 
 ## 安装
+
+### 1. 活动面板（CLI 插件）
 
 插件加载走 `~/.config/opencode/cli.json`（CLI-only 插件，连远程 server 时也生效）：
 
@@ -50,6 +57,22 @@ OpenCode V2 的 **CLI 插件**：在右侧栏显示当前会话的「任务目�
 
 改完后新开 TUI（或按 opencode 的配置热重载）即可生效。
 
+### 2. 待办工具（服务端插件，可选）
+
+V2 不带 `todowrite` 工具。要让面板的 `待办 x/y` 有真实数据源，把**同一个仓库目录**作为服务端插件加入 `~/.config/opencode/opencode.json(c)`，并允许该工具：
+
+```jsonc
+{
+  "plugins": [{ "package": "/path/to/opencode-activity-panel" }],
+  "permissions": [{ "action": "todowrite", "resource": "*", "effect": "allow" }]
+}
+```
+
+- 同一个包目录、两个入口：服务端用根导出 `index.ts`，CLI 用 `exports["./tui"]`；
+- 工具名、描述、参数、输出与 V1 完全一致（整表替换语义），模型调用后消息里留下 `todowrite` part，面板据此显示 `待办 x/y` 并随执行走动；
+- 该工具注册为**直连工具**（`codemode: false`），不走 Code Mode 目录——否则调用只留下 `execute` 外壳，面板读不到待办；
+- 已知取舍：模型可见工具面多一个工具（首次请求前缀变化一次，之后缓存照常命中）；不需要时从 `plugins` 移除即可。
+
 ## 选项
 
 | 选项 | 默认值 | 说明 |
@@ -62,7 +85,7 @@ OpenCode V2 的 **CLI 插件**：在右侧栏显示当前会话的「任务目�
 | `showGoal` / `showAction` / `showPlan` | `true` | 按区块开关 |
 | `debug` | `false` | 加载时弹 toast，用于确认插件已生效 |
 
-计划标记：`[ ]` 待办、`[>]` 当前步骤、`[✓]` 已完成。折叠的单行末尾有 `…`，点击该行即展开（展开后按侧栏宽度换行），再点收起。
+计划标记：`[ ]` 待办、`[>]` 当前步骤、`[✓]` 已完成、`[-]` 已取消。折叠的单行末尾有 `…`，点击该行即展开（展开后按侧栏宽度换行），再点收起。
 
 ## 开发
 
@@ -75,11 +98,14 @@ npm test            # node --test（Node 22 直接跑 .ts，无需框架）
 目录结构：
 
 ```
-tui.tsx                 入口薄壳（exports["./tui"] 与目录直读两种解析模式都命中）
+tui.tsx                 活动面板入口薄壳（exports["./tui"] 与目录直读两种解析模式都命中）
+index.ts                服务端插件入口：注册 V2 版 todowrite（V1 同款描述/参数/输出）
 src/
   plugin.tsx            Plugin.define：事件订阅、状态容器、slot 注册
   options.ts            选项解析
   types.ts              共享类型（纯数据）
+  todo/description.ts   V1 todowrite 描述原文
+  todo/tool.ts          待办工具的 JSON Schema / 校验 / 输出格式（纯函数）
   parse/todos.ts        真实待办提取（todowrite 工具 part，纯函数）
   parse/plan.ts         计划文本解析（纯函数，有缓存）
   state/activity.ts     活动状态机（纯 reducer）
@@ -99,10 +125,11 @@ docs/dev-notes.md       加载方式、事件表、踩坑记录
 - 日志：`~/.local/share/opencode/log/opencode.log`（`OPENCODE_LOG_LEVEL=DEBUG` 更详细）
 - 面板不显示时先确认侧栏已展开（默认 `<leader>b` 切换）
 - 事件字段可对照 `docs/dev-notes.md` 里的映射表
+- 待办链路快速验证：`opencode run --auto "请调用 todowrite 登记一个两条的待办清单"`，然后在日志/消息里确认出现顶层 `todowrite` 调用
 
 ## 卸载
 
-从 `~/.config/opencode/cli.json` 的 `plugins` 数组中移除本条目即可；目录本身不会自动删除。
+从 `~/.config/opencode/cli.json` 的 `plugins` 数组中移除活动面板条目即可；若装了待办工具，再把 `~/.config/opencode/opencode.json(c)` 的 `plugins` 里对应条目和 `todowrite` 权限一并移除。目录本身不会自动删除。
 
 ## 协议
 

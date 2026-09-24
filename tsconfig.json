@@ -13,5 +13,5 @@
     "forceConsistentCasingInFileNames": true,
     "types": ["node"]
   },
-  "include": ["tui.tsx", "src", "test"]
+  "include": ["tui.tsx", "index.ts", "src", "test"]
 }

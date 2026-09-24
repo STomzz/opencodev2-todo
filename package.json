@@ -1,15 +1,16 @@
 {
   "name": "opencode-activity-panel",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
-  "description": "OpenCode V2 CLI plugin: live session activity panel in the sidebar (zero prompt injection)",
+  "description": "OpenCode V2 plugins: a sidebar activity panel (CLI, zero prompt injection) and a server plugin restoring V1's todowrite tool",
   "license": "MIT",
   "repository": {
     "type": "git",
     "url": "https://github.com/STomzz/opencodev2-todo.git"
   },
   "exports": {
+    ".": "./index.ts",
     "./tui": "./tui.tsx"
   },
   "scripts": {
