@@ -34,8 +34,13 @@ export function Panel(props: PanelProps) {
   })
 
   const messages = () => props.messages(props.sessionID) ?? []
-  // Real todos win over text heuristics: they carry live statuses.
-  const plan = () => extractTodos(messages(), props.options.maxPlanItems) ?? extractPlan(messages(), props.options.maxPlanItems)
+  // Real todos win over text heuristics: they carry live statuses. With
+  // `planSource: "todo"` the panel never guesses from text at all.
+  const plan = () => {
+    const todos = extractTodos(messages(), props.options.maxPlanItems)
+    if (todos || props.options.planSource === "todo") return todos
+    return extractPlan(messages(), props.options.maxPlanItems)
+  }
   const visiblePlan = () => {
     const parsed = plan()
     return parsed && planVisible(parsed, props.dismissed(props.sessionID)) ? parsed : undefined

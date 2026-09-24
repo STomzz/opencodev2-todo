@@ -28,3 +28,11 @@ test("section toggles only accept explicit false", () => {
   assert.equal(options.showAction, true)
   assert.equal(options.showPlan, true)
 })
+
+test("planSource accepts todo or todo+text, defaults to todo+text", () => {
+  assert.equal(resolveOptions(undefined).planSource, "todo+text")
+  assert.equal(resolveOptions({ planSource: "todo" }).planSource, "todo")
+  assert.equal(resolveOptions({ planSource: "todo+text" }).planSource, "todo+text")
+  // Anything else falls back to the default instead of throwing.
+  assert.equal(resolveOptions({ planSource: "text" }).planSource, "todo+text")
+})

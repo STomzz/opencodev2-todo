@@ -64,6 +64,8 @@ export interface PanelOptions {
   readonly showGoal: boolean
   readonly showAction: boolean
   readonly showPlan: boolean
+  /** `todo`: only render real `todowrite` todos (never guess from text). */
+  readonly planSource: "todo+text" | "todo"
 }
 
 /**

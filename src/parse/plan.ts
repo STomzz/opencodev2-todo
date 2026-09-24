@@ -3,9 +3,12 @@
  *
  * Heuristics (documented so failures are predictable):
  * - fenced code blocks are ignored
+ * - a list is only accepted when it *looks like a plan*, not merely like a list:
+ *   check-off syntax, a plan-style introduction (## 步骤 / 计划如下：), or a
+ *   message from the `plan` agent. Status reports and option lists are rejected.
  * - numbered (`1.` / `1)`) and checkbox (`- [x]`) items are strong signals
  * - plain bullets count only when a run has at least three items
- * - a run needs at least two items; the longest run in the message wins
+ * - a run needs at least two items; the longest accepted run in the message wins
  * - a newer message from the `plan` agent wins over any other message
  * - `tracked` is true when the plan uses check-off syntax, which is the only
  *   case where "current step" is a claim we are allowed to make
@@ -21,6 +24,18 @@ const NUMBERED = /^\s*\d{1,2}[.)、]\s+(.+)$/
 const BULLET = /^\s*[-*+•]\s+(.+)$/
 const DONE_MARK = /^(?:✅|☑|✔|✓)\s*(.+)$/
 const TODO_MARK = /^(?:⏳|🔄|▶|☐|⬜)\s*(.+)$/
+
+/** Wording that turns a list into a plan; kept broad on purpose but not free. */
+const PLAN_WORDS = /(计划|步骤|待办|清单|下一步|流程|实施|路线|排期|roadmap|todo|checklist|plan|steps?)/i
+/** How many non-empty lines before a run are scanned for an introduction. */
+const CONTEXT_LINES = 3
+
+/** A line introduces a plan when it both names one and reads like an introduction. */
+function introducesPlan(line: string): boolean {
+  if (!PLAN_WORDS.test(line)) return false
+  const trimmed = line.trim()
+  return /^#{1,6}\s/.test(trimmed) || /[:：]\s*$/.test(trimmed) || /如下|以下/.test(trimmed)
+}
 
 type ItemKind = "checkbox" | "done" | "todo" | "numbered" | "bullet"
 
@@ -59,13 +74,37 @@ function matchItem(line: string): RawItem | undefined {
   return undefined
 }
 
+/** Whether plan-ish wording introduces the run (checked in the lead-in only). */
+function planContext(lines: readonly string[], start: number): boolean {
+  const leadIn: string[] = []
+  for (let index = start - 1; index >= 0 && leadIn.length < CONTEXT_LINES; index--) {
+    const line = lines[index]!
+    if (line.trim().length === 0) continue
+    leadIn.push(line)
+  }
+  return leadIn.some(introducesPlan)
+}
+
+/** A run counts as a plan when it is marked, plan-ish worded, or from the plan agent. */
+function acceptRun(run: readonly RawItem[], lines: readonly string[], start: number, fromPlanAgent: boolean): boolean {
+  if (run.length < 2) return false
+  const hasStrong = run.some((item) => item.kind !== "bullet")
+  if (!hasStrong && run.length < 3) return false
+  if (fromPlanAgent) return true
+  if (run.some((item) => TRACKED_KINDS.has(item.kind))) return true
+  return planContext(lines, start)
+}
+
 /** Parses the best plan-like list out of one message text. */
-export function parsePlanList(text: string, maxItems: number): ParsedList | undefined {
+export function parsePlanList(text: string, maxItems: number, fromPlanAgent = false): ParsedList | undefined {
+  const lines = text.split(/\r?\n/)
   const runs: RawItem[][] = []
+  const starts: number[] = []
   let run: RawItem[] | undefined
   let inFence = false
 
-  for (const raw of text.split(/\r?\n/)) {
+  for (let index = 0; index < lines.length; index++) {
+    const raw = lines[index]!
     if (FENCE.test(raw)) {
       inFence = !inFence
       continue
@@ -78,6 +117,7 @@ export function parsePlanList(text: string, maxItems: number): ParsedList | unde
       if (!run) {
         run = []
         runs.push(run)
+        starts.push(index)
       }
       run.push(item)
       continue
@@ -94,10 +134,9 @@ export function parsePlanList(text: string, maxItems: number): ParsedList | unde
   }
 
   let best: RawItem[] | undefined
-  for (const candidate of runs) {
-    if (candidate.length < 2) continue
-    const hasStrong = candidate.some((item) => item.kind !== "bullet")
-    if (!hasStrong && candidate.length < 3) continue
+  for (let index = 0; index < runs.length; index++) {
+    const candidate = runs[index]!
+    if (!acceptRun(candidate, lines, starts[index]!, fromPlanAgent)) continue
     if (!best || candidate.length > best.length) best = candidate
   }
   if (!best) return undefined
@@ -135,13 +174,14 @@ const CACHE_LIMIT = 256
 
 function listFor(message: MessageLike, maxItems: number): ParsedList | undefined {
   const text = messageText(message)
-  const key = `${message.id}:${maxItems}`
+  const fromPlanAgent = message.agent === "plan"
+  const key = `${message.id}:${maxItems}:${fromPlanAgent ? "p" : "-"}`
   const length = text.length
   const digest = hash(text)
   const cached = cache.get(key)
   if (cached && cached.length === length && cached.digest === digest) return cached.parsed
 
-  const parsed = parsePlanList(text, maxItems)
+  const parsed = parsePlanList(text, maxItems, fromPlanAgent)
   if (cache.size >= CACHE_LIMIT) cache.clear()
   cache.set(key, { length, digest, parsed })
   return parsed

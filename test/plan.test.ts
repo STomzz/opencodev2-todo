@@ -24,6 +24,26 @@ test("parses a numbered list after a preamble", () => {
   assert.equal(parsed?.tracked, false)
 })
 
+test("rejects numbered lists that are not introduced as plans", () => {
+  // A status report: shape is right, meaning is not.
+  const report = parsePlanList("我做了这些：\n1. 复核存储键规则\n2. 确认热重载不再失败\n3. 观察落盘结果\n", 10)
+  assert.equal(report, undefined)
+})
+
+test("accepts plan-ish wording above the list", () => {
+  const parsed = parsePlanList("## 实施步骤\n\n1. 建骨架\n2. 接线\n3. 验收\n", 10)
+  assert.deepEqual(
+    parsed?.items.map((item) => item.text),
+    ["建骨架", "接线", "验收"],
+  )
+})
+
+test("plan agent messages are accepted without plan-ish wording", () => {
+  const text = "1. 检查通道\n2. 检查路由\n"
+  assert.equal(parsePlanList(text, 10), undefined)
+  assert.equal(parsePlanList(text, 10, true)?.items.length, 2)
+})
+
 test("parses checkboxes and marks the list as tracked", () => {
   const parsed = parsePlanList("- [x] 第一步\n- [ ] 第二步\n- [ ] 第三步\n", 10)
   assert.deepEqual(
@@ -39,8 +59,8 @@ test("parses checkboxes and marks the list as tracked", () => {
 
 test("done and todo glyphs count as tracked", () => {
   assert.equal(parsePlanList("✅ 已完成\n⏳ 进行中\n", 10)?.tracked, true)
-  assert.equal(parsePlanList("1. 编号一\n2. 编号二\n", 10)?.tracked, false)
-  assert.equal(parsePlanList("- 甲\n- 乙\n- 丙\n", 10)?.tracked, false)
+  assert.equal(parsePlanList("步骤：\n1. 编号一\n2. 编号二\n", 10)?.tracked, false)
+  assert.equal(parsePlanList("待办：\n- 甲\n- 乙\n- 丙\n", 10)?.tracked, false)
 })
 
 test("ignores fenced code blocks", () => {
@@ -54,16 +74,16 @@ test("requires at least two items", () => {
 
 test("plain bullet runs require three items", () => {
   assert.equal(parsePlanList("- a\n- b\n", 10), undefined)
-  assert.deepEqual(texts("- a\n- b\n- c\n"), ["a", "b", "c"])
+  assert.deepEqual(texts("待办：\n- a\n- b\n- c\n"), ["a", "b", "c"])
 })
 
-test("picks the longest run and respects maxItems", () => {
-  const text = "1. a\n2. b\n\n中间说明\n\n1. x\n2. y\n3. z\n4. w\n"
+test("picks the longest accepted run and respects maxItems", () => {
+  const text = "步骤：\n1. a\n2. b\n\n下一批步骤：\n1. x\n2. y\n3. z\n4. w\n"
   assert.deepEqual(texts(text, 2), ["x", "y"])
 })
 
 test("joins indented continuation lines", () => {
-  assert.deepEqual(texts("1. first step\n   with more detail\n2. second step\n"), [
+  assert.deepEqual(texts("步骤：\n1. first step\n   with more detail\n2. second step\n"), [
     "first step with more detail",
     "second step",
   ])
@@ -76,7 +96,7 @@ function assistant(id: string, text: string, agent = "build"): MessageLike {
 test("extractPlan prefers the plan agent over newer build messages", () => {
   const messages: MessageLike[] = [
     assistant("m1", "1. plan one\n2. plan two", "plan"),
-    assistant("m2", "1. build one\n2. build two", "build"),
+    assistant("m2", "待办：\n1. build one\n2. build two", "build"),
   ]
   const plan = extractPlan(messages, 10)
   assert.equal(plan?.messageID, "m1")
@@ -85,20 +105,23 @@ test("extractPlan prefers the plan agent over newer build messages", () => {
 })
 
 test("extractPlan marks a plan from the newest assistant message", () => {
-  const messages: MessageLike[] = [assistant("m1", "1. old one\n2. old two"), assistant("m2", "1. new one\n2. new two")]
+  const messages: MessageLike[] = [
+    assistant("m1", "步骤：\n1. old one\n2. old two"),
+    assistant("m2", "步骤：\n1. new one\n2. new two"),
+  ]
   const plan = extractPlan(messages, 10)
   assert.equal(plan?.messageID, "m2")
   assert.equal(plan?.fromLatestAssistant, true)
 })
 
 test("extractPlan cache invalidates when the message text changes", () => {
-  assert.deepEqual(texts("1. alpha\n2. beta"), ["alpha", "beta"])
-  const first: MessageLike[] = [assistant("m1", "1. alpha\n2. beta")]
+  assert.deepEqual(texts("步骤：\n1. alpha\n2. beta"), ["alpha", "beta"])
+  const first: MessageLike[] = [assistant("m1", "步骤：\n1. alpha\n2. beta")]
   assert.deepEqual(
     extractPlan(first, 10)?.items.map((item) => item.text),
     ["alpha", "beta"],
   )
-  const second: MessageLike[] = [assistant("m1", "1. alpha\n2. beta\n3. gamma")]
+  const second: MessageLike[] = [assistant("m1", "步骤：\n1. alpha\n2. beta\n3. gamma")]
   assert.deepEqual(
     extractPlan(second, 10)?.items.map((item) => item.text),
     ["alpha", "beta", "gamma"],
@@ -124,7 +147,7 @@ const plan = (overrides: Partial<Plan> = {}): Plan => ({
 test("extractPlan counts user messages sent after the plan", () => {
   const messages: MessageLike[] = [
     { id: "u1", type: "user", text: "request" },
-    assistant("m1", "1. one\n2. two"),
+    assistant("m1", "待办：\n1. one\n2. two"),
     { id: "u2", type: "user", text: "follow up" },
     assistant("m2", "no list in this one"),
     { id: "u3", type: "user", text: "and another" },
@@ -174,7 +197,7 @@ test("extractPlan marks the current step only for tracked lists", () => {
   assert.equal(extractPlan(tracked, 10)?.currentIndex, 1)
   assert.equal(extractPlan(tracked, 10)?.source, "text")
 
-  const plain: MessageLike[] = [assistant("m1", "1. one\n2. two")]
+  const plain: MessageLike[] = [assistant("m1", "计划：\n1. one\n2. two")]
   assert.equal(extractPlan(plain, 10)?.currentIndex, -1)
 })
 

@@ -10,6 +10,8 @@ export const DEFAULT_OPTIONS: PanelOptions = {
   showGoal: true,
   showAction: true,
   showPlan: true,
+  // "todo+text": real todos, else the tightened text heuristic; "todo": real todos only.
+  planSource: "todo+text",
 }
 
 function intOption(value: unknown, fallback: number, min: number, max: number): number {
@@ -30,5 +32,6 @@ export function resolveOptions(raw: Readonly<Record<string, unknown>> | undefine
     showGoal: source["showGoal"] !== false,
     showAction: source["showAction"] !== false,
     showPlan: source["showPlan"] !== false,
+    planSource: source["planSource"] === "todo" ? "todo" : DEFAULT_OPTIONS.planSource,
   }
 }
