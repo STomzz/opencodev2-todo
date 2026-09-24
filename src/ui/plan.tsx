@@ -2,6 +2,7 @@ import type { Plan } from "../types.ts"
 import type { Palette } from "../theme.ts"
 import { planProgress, planTitle } from "../parse/plan.ts"
 import { CollapsibleLine } from "./line.tsx"
+import { SectionHeading } from "./heading.tsx"
 
 export interface PlanSectionProps {
   readonly plan: Plan | undefined
@@ -36,9 +37,12 @@ export function PlanSection(props: PlanSectionProps) {
     <box flexDirection="column">
       {props.plan && items().length > 0 ? (
         <box flexDirection="column">
-          <text fg={props.palette.muted} onMouseDown={() => props.onDismiss()}>
-            {`${planTitle(props.plan)}  [隐藏]`}
-          </text>
+          <SectionHeading
+            label={planTitle(props.plan)}
+            suffix="[隐藏]"
+            palette={props.palette}
+            onMouseDown={() => props.onDismiss()}
+          />
           {complete()
             ? null
             : items().map((item, index) => {

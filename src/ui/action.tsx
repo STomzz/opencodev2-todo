@@ -3,6 +3,7 @@ import type { Palette } from "../theme.ts"
 import { toolLabel } from "../util/summarize.ts"
 import { formatDuration, oneLine } from "../util/text.ts"
 import { CollapsibleLine } from "./line.tsx"
+import { SectionHeading } from "./heading.tsx"
 
 export interface ActionSectionProps {
   readonly activity: ActivityState | undefined
@@ -62,7 +63,7 @@ export function ActionSection(props: ActionSectionProps) {
 
   return (
     <box flexDirection="column">
-      <text fg={props.palette.muted}>当前动作</text>
+      <SectionHeading label="当前动作" palette={props.palette} />
       {props.unknownHint ? (
         <text fg={props.palette.warning} wrapMode="word">
           ? 运行中（未识别事件）

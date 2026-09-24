@@ -85,7 +85,7 @@ src/
   util/events.ts        服务端事件 -> 内部事件映射
   util/summarize.ts     工具入参摘要
   util/text.ts          截断 / 单行化 / 耗时格式化
-  ui/                   sidebar.content 的四个渲染组件
+  ui/                   sidebar.content 的渲染组件（含 `heading.tsx` 栏目标题）
 test/                   纯逻辑单测（node --test）
 docs/dev-notes.md       加载方式、事件表、踩坑记录
 ```

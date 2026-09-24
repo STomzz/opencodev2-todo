@@ -1,5 +1,6 @@
 import type { Palette } from "../theme.ts"
 import { CollapsibleLine } from "./line.tsx"
+import { SectionHeading } from "./heading.tsx"
 
 export interface GoalSectionProps {
   readonly title?: string
@@ -27,7 +28,7 @@ export function GoalSection(props: GoalSectionProps) {
   const key = (suffix: string) => `${props.keyPrefix}:${suffix}`
   return (
     <box flexDirection="column">
-      <text fg={props.palette.muted}>任务</text>
+      <SectionHeading label="任务" palette={props.palette} />
       <CollapsibleLine
         text={heading()}
         color={props.palette.base}
