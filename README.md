@@ -69,9 +69,10 @@ V2 不带 `todowrite` 工具。要让面板的 `待办 x/y` 有真实数据源�
 ```
 
 - 同一个包目录、两个入口：服务端用根导出 `index.ts`，CLI 用 `exports["./tui"]`；
-- 工具名、描述、参数、输出与 V1 完全一致（整表替换语义），模型调用后消息里留下 `todowrite` part，面板据此显示 `待办 x/y` 并随执行走动；
-- 该工具注册为**直连工具**（`codemode: false`），不走 Code Mode 目录——否则调用只留下 `execute` 外壳，面板读不到待办；
-- 已知取舍：模型可见工具面多一个工具（首次请求前缀变化一次，之后缓存照常命中）；不需要时从 `plugins` 移除即可。
+- 工具名、描述、参数、输出与 V1 完全一致（整表替换语义）；模型调用后，面板据此显示 `待办 x/y` 并随执行走动；
+- 注册为 **Code Mode 目录工具**（`codemode: true, pinned: true`）：Code Mode 会话只能调用目录里的工具，直连注册（`codemode: false`）在那种会话里完全不可见（2026-09-24 实测，`tools.todowrite` 报 `Unknown tool`）；
+- **记录形状**：Code Mode 里的调用发生在 `execute` 内，嵌套调用的名称/状态/**完整入参**会写进该 `execute` part 的 `metadata.toolCalls`（Core 给 TUI 的官方机制）；直接调用的会话则留下顶层 `todowrite` part。面板两种形状都读；
+- 已知取舍：模型可见工具面多一个目录工具（首次请求前缀变化一次，之后缓存照常命中）；不需要时从 `plugins` 移除即可。
 
 ## 选项
 
@@ -125,7 +126,7 @@ docs/dev-notes.md       加载方式、事件表、踩坑记录
 - 日志：`~/.local/share/opencode/log/opencode.log`（`OPENCODE_LOG_LEVEL=DEBUG` 更详细）
 - 面板不显示时先确认侧栏已展开（默认 `<leader>b` 切换）
 - 事件字段可对照 `docs/dev-notes.md` 里的映射表
-- 待办链路快速验证：`opencode run --auto "请调用 todowrite 登记一个两条的待办清单"`，然后在日志/消息里确认出现顶层 `todowrite` 调用
+- 待办链路快速验证：让模型调用 `todowrite`，再查消息里 `execute` part 的 `metadata.toolCalls`（Code Mode 会话）或顶层 `todowrite` part（直连会话）；面板的 `待办 x/y` 会随最新一次调用更新
 
 ## 卸载
 

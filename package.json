@@ -1,6 +1,6 @@
 {
   "name": "opencode-activity-panel",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "private": true,
   "type": "module",
   "description": "OpenCode V2 plugins: a sidebar activity panel (CLI, zero prompt injection) and a server plugin restoring V1's todowrite tool",

@@ -83,7 +83,7 @@ export interface ContentPart {
   readonly id?: string
   readonly name?: string
   readonly tool?: string
-  readonly state?: { readonly status?: string; readonly input?: unknown }
+  readonly state?: { readonly status?: string; readonly input?: unknown; readonly metadata?: unknown }
   readonly time?: { readonly created?: number; readonly ran?: number }
 }
 

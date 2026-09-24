@@ -42,10 +42,12 @@
 
 - 背景：V2 没有 todo 工具 → 模型没有地方写真实进度、面板 `待办 x/y` 永远点不亮。方案是把 V1（`packages/opencode/src/tool/todo.ts` + `todowrite.txt`）原样搬回来。
 - 注册：`Plugin.define({ id, setup })`（`@opencode/plugin` 的 promise 入口）→ `ctx.tool.transform((editor) => editor.add({...}))`；`input` 是普通 JSON Schema（V1 zod 的等价物），`execute` 返回 `{ content: JSON.stringify(todos, null, 2), metadata: { todos } }`（与 V1 输出一致）。
-- **必须 `options: { codemode: false }`**：默认注册进的是 Code Mode 目录，模型只能在 `execute` 里 `tools.todowrite(...)`，消息里只留 `execute` 外壳——面板看不到。`codemode: false` 让它成为直连工具，调用落成顶层 `name: "todowrite"` part，面板零改动可用。
-- 权限：`options.permission: "todowrite"` + 配置里 `{ "action": "todowrite", "resource": "*", "effect": "allow" }`，否则每次调用要确认。
+- **注册为 Code Mode 目录工具**：`options: { permission: "todowrite", codemode: true, pinned: true }`。实测（2026-09-24）：`codemode: false` 的直连注册在 Code Mode 会话（本 TUI 主工作流）里**完全不可见**——目录没有、工具列表没有、`tools.todowrite` 报 `Unknown tool`；只有 `opencode run` 那种原生会话能直接调用，覆盖不到主工作流。
+- **记录形状（关键）**：嵌套调用不会生成自己的 tool part，但 `execute` part 的 `state.metadata.toolCalls` 会带上嵌套调用的名称、状态和**完整入参**（Core 给 TUI 的官方机制；DB 实测 `{"tool":"todowrite","status":"completed","input":{"todos":[…]}}`）。面板 `extractTodos` 两种形状都读：顶层 `todowrite` part（直连/V1 历史）或 `execute` metadata 里最后一条 `todowrite`；metadata 带 `truncated` 标志，被截断时自然回落隐藏（宁缺毋滥）。
+- `pinned: true` 的语义：让工具常驻 Code Mode 目录列表、不被目录预算裁掉（二进制里 `options.pinned` → catalog entry 的 `pinned` 标记）；**不是**"变成直连工具"的开关。
+- 权限：`options.permission: "todowrite"` + 配置里 `{ "action": "todowrite", "resource": "*", "effect": "allow" }`；嵌套调用仍会各自校验权限（官方 Code Mode 文档），allow 必须留着。
 - 语义与 V1 一致：整表替换、不增量；空数组 = 清空（面板会隐藏）。
-- 验证：`opencode run --auto "请调用 todowrite…"` → 消息里应出现顶层 `todowrite` part；`extractTodos` 应返回 `source: "todo"`；日志里 `role=server` 的 plugin 加载无 warn。
+- 验证：Code Mode 会话里 `await tools.todowrite({ todos: […] })` → 该 `execute` part 的 `metadata.toolCalls` 有完整入参 → `extractTodos` 返回 `source: "todo"`；直连会话则查顶层 `todowrite` part；日志里 `role=server` 的 plugin 加载无 warn。
 - 取舍：模型可见工具面多一个工具（首次请求前缀变化、之后缓存照常命中）；描述文本每请求占少量 token。面板本身仍是零 prompt 影响。
 - 描述文本在 `src/todo/description.ts`（V1 原文），schema/校验/格式化在 `src/todo/tool.ts`（纯函数，有单测）。
 

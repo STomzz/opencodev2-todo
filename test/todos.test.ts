@@ -85,6 +85,76 @@ test("extractTodos accepts the v1 `tool` field name too", () => {
   assert.equal(extractTodos(v1, 10)?.items[0]?.text, "a")
 })
 
+const executeMessage = (id: string, calls: unknown[]): MessageLike => ({
+  id,
+  type: "assistant",
+  agent: "build",
+  content: [
+    {
+      type: "tool",
+      id: `call-${id}`,
+      name: "execute",
+      state: {
+        status: "completed",
+        input: { code: "await tools.todowrite({ todos })" },
+        metadata: { toolCalls: calls, truncated: false },
+      },
+    },
+  ],
+})
+
+test("extractTodos reads a nested todowrite call from execute metadata", () => {
+  const plan = extractTodos(
+    [
+      executeMessage("m1", [
+        { tool: "search", status: "completed", input: { query: "todo" } },
+        {
+          tool: "todowrite",
+          status: "completed",
+          input: { todos: [todo("first", "completed"), todo("second", "in_progress"), todo("third", "cancelled")] },
+        },
+      ]),
+    ],
+    10,
+  )
+  assert.equal(plan?.source, "todo")
+  assert.equal(plan?.tracked, true)
+  assert.equal(plan?.currentIndex, 1)
+  assert.deepEqual(
+    plan?.items.map((item) => [item.text, item.done, item.cancelled ?? false]),
+    [
+      ["first", true, false],
+      ["second", false, false],
+      ["third", false, true],
+    ],
+  )
+})
+
+test("extractTodos takes the last nested todowrite call of a message", () => {
+  const plan = extractTodos(
+    [
+      executeMessage("m1", [
+        { tool: "todowrite", status: "completed", input: { todos: [todo("old", "pending")] } },
+        { tool: "todowrite", status: "completed", input: { todos: [todo("new", "in_progress")] } },
+      ]),
+    ],
+    10,
+  )
+  assert.deepEqual(plan?.items.map((item) => item.text), ["new"])
+})
+
+test("extractTodos ignores execute parts without a todowrite call", () => {
+  const plan = extractTodos(
+    [
+      message("m0", [todo("direct", "pending")]),
+      executeMessage("m1", [{ tool: "search", status: "completed", input: { limit: 10 } }]),
+    ],
+    10,
+  )
+  assert.equal(plan?.messageID, "m0")
+  assert.deepEqual(plan?.items.map((item) => item.text), ["direct"])
+})
+
 test("extractTodos ignores user messages and empty caches", () => {
   assert.equal(extractTodos([], 10), undefined)
   assert.equal(extractTodos([{ id: "u1", type: "user", text: "1. a\n2. b" }], 10), undefined)

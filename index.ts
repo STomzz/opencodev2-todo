@@ -4,8 +4,15 @@
  * V2 ships no todo tool, so the model has nothing to record real progress with
  * (calls to `todowrite` fail with `No tool named "todowrite" is currently
  * available`). Registering the same tool name, description and parameters V1
- * used closes that gap for both the model and the activity panel, which already
- * reads `todowrite` calls for its `待办 x/y` block — no CLI-side change needed.
+ * used closes that gap for both the model and the activity panel.
+ *
+ * Registered as a Code Mode catalog tool (`codemode: true`): Code Mode sessions
+ * can only reach tools that appear in the `execute` catalog, so a direct tool
+ * (`codemode: false`) is invisible there — measured 2026-09-24, `tools.todowrite`
+ * answered `Unknown tool`. Nested calls keep their full input in the `execute`
+ * part's `metadata.toolCalls`, and the activity panel reads the todos from
+ * there; sessions that call the tool directly still record a plain `todowrite`
+ * tool part, which the panel understands too.
  *
  * Load it from `plugins` in `opencode.json(c)` (a server plugin, unlike the
  * panel which is a CLI plugin in `cli.json`):
@@ -31,11 +38,9 @@ export default Plugin.define({
         // A plain JSON Schema object; the runtime validates it and hands the
         // executor `unknown`, which `normalizeTodos` re-checks defensively.
         input: TODO_INPUT_SCHEMA as never,
-        // A direct tool, not a Code Mode catalog tool: the model must call
-        // `todowrite` itself so the call is recorded as its own tool part
-        // (nested catalog calls only leave an `execute` wrapper behind, which
-        // the activity panel cannot read).
-        options: { permission: "todowrite", codemode: false },
+        // Code Mode catalog tool (see the header); `pinned` keeps it listed in
+        // the catalog instead of being hidden by catalog budgeting.
+        options: { permission: "todowrite", codemode: true, pinned: true },
         execute: async (input) => {
           const parsed = normalizeTodos(input)
           if ("error" in parsed) throw new Error(parsed.error)
