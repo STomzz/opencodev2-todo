@@ -211,7 +211,9 @@ export function extractPlan(messages: readonly MessageLike[], maxItems: number):
         if (messages[next]?.type === "user") userMessagesAfter++
       }
       const items = parsed.items
-      const currentIndex = parsed.tracked ? items.findIndex((item) => !item.done) : -1
+      const currentIndex = parsed.tracked
+        ? items.findIndex((item) => !item.done && !item.cancelled)
+        : -1
       return {
         items,
         messageID: message.id,
@@ -248,6 +250,17 @@ export function planVisible(plan: Plan, dismissedID: string | undefined): boolea
 export function planProgress(plan: Plan): { done: number; total: number; complete: boolean } {
   const done = plan.items.filter((item) => item.done).length
   return { done, total: plan.items.length, complete: plan.tracked && done === plan.items.length }
+}
+
+/**
+ * ASCII marker for one plan step: `[✓]` done, `[-]` cancelled todos (kept in
+ * place, never "current"), `[>]` the running step, `[ ]` the rest. Plain ASCII
+ * so terminal fonts cannot render it as a box.
+ */
+export function planMarker(item: PlanItem, current: boolean): string {
+  if (item.done) return "[✓]"
+  if (item.cancelled) return "[-]"
+  return current ? "[>]" : "[ ]"
 }
 
 /** Section header: says where the plan came from and how far along it is. */

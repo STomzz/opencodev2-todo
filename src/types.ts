@@ -32,6 +32,8 @@ export interface ActivityState {
 export interface PlanItem {
   readonly text: string
   readonly done: boolean
+  /** Cancelled todos keep their place but are neither done nor current. */
+  readonly cancelled?: boolean
 }
 
 /** Where the plan came from: the model's own todo tool, or text heuristics. */

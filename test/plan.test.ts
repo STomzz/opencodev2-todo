@@ -5,6 +5,7 @@ import {
   isSuperseded,
   lastUserText,
   parsePlanList,
+  planMarker,
   planProgress,
   planTitle,
   planVisible,
@@ -181,6 +182,14 @@ test("planProgress reports done/total and completion", () => {
     planProgress(plan({ tracked: false, items: [{ text: "a", done: true }] })),
     { done: 1, total: 1, complete: false },
   )
+})
+
+test("planMarker covers all four ASCII markers", () => {
+  assert.equal(planMarker({ text: "a", done: false }, false), "[ ]")
+  assert.equal(planMarker({ text: "a", done: false }, true), "[>]")
+  assert.equal(planMarker({ text: "a", done: true }, true), "[✓]")
+  // Cancelled wins over "current": a dropped step is never highlighted.
+  assert.equal(planMarker({ text: "a", done: false, cancelled: true }, true), "[-]")
 })
 
 test("planTitle reports progress honestly", () => {

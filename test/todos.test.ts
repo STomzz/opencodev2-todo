@@ -1,7 +1,7 @@
 import assert from "node:assert/strict"
 import { test } from "node:test"
 import { extractTodos, todosFromInput } from "../src/parse/todos.ts"
-import { planProgress, planTitle } from "../src/parse/plan.ts"
+import { planMarker, planProgress, planTitle } from "../src/parse/plan.ts"
 import type { MessageLike } from "../src/types.ts"
 
 const message = (id: string, todos: unknown, agent = "build"): MessageLike => ({
@@ -88,4 +88,18 @@ test("extractTodos accepts the v1 `tool` field name too", () => {
 test("extractTodos ignores user messages and empty caches", () => {
   assert.equal(extractTodos([], 10), undefined)
   assert.equal(extractTodos([{ id: "u1", type: "user", text: "1. a\n2. b" }], 10), undefined)
+})
+
+test("cancelled todos render as [-], never as the current step", () => {
+  const plan = extractTodos([message("m1", [todo("dropped", "cancelled"), todo("next", "pending")])], 10)
+  assert.equal(plan?.items[0]?.cancelled, true)
+  assert.equal(plan?.items[0]?.done, false)
+  assert.equal(plan?.currentIndex, 1)
+  assert.equal(plan ? planMarker(plan.items[0], true) : "?", "[-]")
+  assert.equal(plan ? planMarker(plan.items[1], true) : "?", "[>]")
+
+  // A cancelled tail does not count as completed (V1 counted non-completed too).
+  const tail = extractTodos([message("m1", [todo("done", "completed"), todo("dropped", "cancelled")])], 10)
+  assert.equal(tail?.currentIndex, -1)
+  assert.equal(tail ? planProgress(tail).complete : true, false)
 })

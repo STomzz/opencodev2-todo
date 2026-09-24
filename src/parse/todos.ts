@@ -1,10 +1,11 @@
 /**
  * Real todo extraction from the model's own `todowrite` tool calls.
  *
- * OpenCode V2 exposes a global `todowrite` tool; every call carries the full
- * list with `status: "pending" | "in_progress" | "completed"`, so the newest
- * call in the message cache is the authoritative plan — no heuristics, and the
- * check marks actually move while the session works.
+ * The V2 build ships no todo tool, so this repository's server plugin
+ * (`index.ts`) registers V1's `todowrite` again; every call carries the full
+ * list with `status: "pending" | "in_progress" | "completed" | "cancelled"`,
+ * and the newest call in the message cache is the authoritative plan — no
+ * heuristics, and the check marks actually move while the session works.
  *
  * Pure; unit tested.
  */
@@ -41,7 +42,8 @@ function currentTodoIndex(todos: readonly TodoEntry[], visible: number): number 
     if (todos[index]?.status === "in_progress") return index
   }
   for (let index = 0; index < limit; index++) {
-    if (todos[index]?.status !== "completed") return index
+    const status = todos[index]?.status
+    if (status !== "completed" && status !== "cancelled") return index
   }
   return -1
 }
@@ -79,6 +81,7 @@ export function extractTodos(messages: readonly MessageLike[], maxItems: number)
     const items = todos.slice(0, Math.max(1, maxItems)).map<PlanItem>((todo) => ({
       text: todo.content,
       done: todo.status === "completed",
+      cancelled: todo.status === "cancelled",
     }))
     return {
       items,
