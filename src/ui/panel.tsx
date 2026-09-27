@@ -6,6 +6,7 @@ import { showUnknownHint } from "../state/activity.ts"
 import { palette } from "../theme.ts"
 import { GoalSection } from "./goal.tsx"
 import { ActionSection } from "./action.tsx"
+import { DotMatrix } from "./dotmatrix.tsx"
 import { PlanSection } from "./plan.tsx"
 
 export interface PanelProps {
@@ -17,6 +18,8 @@ export interface PanelProps {
   readonly title: (sessionID: string) => string | undefined
   readonly running: (sessionID: string) => boolean
   readonly now: () => number
+  /** Animation frame for the dot-matrix glyph; only advances while busy. */
+  readonly animationTick: () => number
   /** Message id of the plan this session hid by hand, if any. */
   readonly dismissed: (sessionID: string) => string | undefined
   readonly dismiss: (sessionID: string, messageID: string) => void
@@ -26,7 +29,7 @@ export interface PanelProps {
   readonly toggleExpanded: (key: string) => void
 }
 
-/** Sidebar root: 任务 / 当前动作 / 计划. Reads are reactive, never injected into prompts. */
+/** Sidebar root: 任务 / 当前动作 / 动画 / 计划. Reads are reactive, never injected into prompts. */
 export function Panel(props: PanelProps) {
   createEffect(() => {
     const sessionID = props.sessionID
@@ -74,6 +77,15 @@ export function Panel(props: PanelProps) {
           keyPrefix={`${props.sessionID}:action`}
           isExpanded={props.isExpanded}
           toggleExpanded={props.toggleExpanded}
+        />
+      ) : null}
+      {props.options.showAnimation ? (
+        <DotMatrix
+          kind={props.activity(props.sessionID)?.kind}
+          running={props.running(props.sessionID)}
+          tick={props.animationTick()}
+          palette={colors()}
+          ascii={props.options.asciiDots}
         />
       ) : null}
       {props.options.showPlan ? (

@@ -66,6 +66,10 @@ export interface PanelOptions {
   readonly showGoal: boolean
   readonly showAction: boolean
   readonly showPlan: boolean
+  /** Show the four-line dot-matrix animation above the plan block. */
+  readonly showAnimation: boolean
+  /** Use `.` / `o` instead of `·` / `●` when the terminal font lacks them. */
+  readonly asciiDots: boolean
   /** `todo`: only render real `todowrite` todos (never guess from text). */
   readonly planSource: "todo+text" | "todo"
 }

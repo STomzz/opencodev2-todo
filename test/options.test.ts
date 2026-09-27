@@ -27,6 +27,14 @@ test("section toggles only accept explicit false", () => {
   assert.equal(options.showGoal, false)
   assert.equal(options.showAction, true)
   assert.equal(options.showPlan, true)
+  assert.equal(options.showAnimation, true)
+  assert.equal(resolveOptions({ showAnimation: false }).showAnimation, false)
+})
+
+test("asciiDots is opt-in only", () => {
+  assert.equal(resolveOptions(undefined).asciiDots, false)
+  assert.equal(resolveOptions({ asciiDots: true }).asciiDots, true)
+  assert.equal(resolveOptions({ asciiDots: "yes" }).asciiDots, false)
 })
 
 test("planSource accepts todo or todo+text, defaults to todo+text", () => {

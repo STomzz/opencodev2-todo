@@ -32,6 +32,7 @@ export default Plugin.define({
     // guarded helper so a storage problem can never take the panel down.
     const [activities, updateActivities] = memoryStore(context, "activity-state", {} as Record<string, ActivityState>)
     const [clock, updateClock] = memoryStore(context, "activity-clock", { now: Date.now() })
+    const [animation, updateAnimation] = memoryStore(context, "activity-frame", { tick: 0 })
     const [expanded, updateExpanded] = memoryStore(context, "activity-expanded", {} as Record<string, boolean>)
     const [dismissed, updateDismissed] = memoryStore(context, "activity-dismissed", {} as Record<string, string>)
 
@@ -46,6 +47,18 @@ export default Plugin.define({
         draft.now = Date.now()
       })
     }, 1_000)
+
+    // The dot-matrix glyph only moves while a session is busy. Idle ticks are
+    // skipped entirely, so a finished session costs no re-renders.
+    const animator = setInterval(() => {
+      const busy = Object.values(activities as Record<string, ActivityState>).some(
+        (activity) => activity && activity.kind !== "idle",
+      )
+      if (!busy) return
+      updateAnimation((draft) => {
+        draft.tick = (draft.tick + 1) % 1_000_000
+      })
+    }, 140)
 
     const stopEvents = context.data.listen(({ details }) => {
       try {
@@ -101,6 +114,7 @@ export default Plugin.define({
           title={(sessionID) => context.data.session.get(sessionID)?.title}
           running={(sessionID) => context.data.session.status(sessionID) === "running"}
           now={() => clock.now}
+          animationTick={() => animation.tick}
           dismissed={(sessionID) => dismissed[sessionID]}
           dismiss={dismissPlan}
           ensure={ensure}
@@ -118,6 +132,7 @@ export default Plugin.define({
       stopSlot()
       stopEvents()
       clearInterval(ticker)
+      clearInterval(animator)
     }
   },
 })

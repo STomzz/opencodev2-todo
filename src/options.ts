@@ -10,6 +10,9 @@ export const DEFAULT_OPTIONS: PanelOptions = {
   showGoal: true,
   showAction: true,
   showPlan: true,
+  showAnimation: true,
+  // `.` / `o` when the terminal font lacks `·` / `●`.
+  asciiDots: false,
   // "todo+text": real todos, else the tightened text heuristic; "todo": real todos only.
   planSource: "todo+text",
 }
@@ -32,6 +35,8 @@ export function resolveOptions(raw: Readonly<Record<string, unknown>> | undefine
     showGoal: source["showGoal"] !== false,
     showAction: source["showAction"] !== false,
     showPlan: source["showPlan"] !== false,
+    showAnimation: source["showAnimation"] !== false,
+    asciiDots: source["asciiDots"] === true,
     planSource: source["planSource"] === "todo" ? "todo" : DEFAULT_OPTIONS.planSource,
   }
 }
