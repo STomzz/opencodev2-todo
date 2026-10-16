@@ -1,21 +1,28 @@
 /**
  * Dot-matrix animation shown between the action block and the plan block.
  *
- * While the session works, a trail of lit dots orbits an infinity glyph; once
- * the turn has finished, the dots settle into a bold check. Geometry and frame
- * selection are pure and unit tested; the Solid component only colors rows.
+ * Three states:
+ * - this session works -> a trail of lit dots orbits one infinity glyph;
+ * - this session idles while the rest of its session family still runs (a
+ *   subagent / delegated task) -> two infinitities, half a loop out of step;
+ * - the whole family stopped -> the dots settle into a bold check.
  *
- * Both glyphs are drawn in a 14x4 character grid. Rows are returned at full
- * width (padded, never trimmed) so centering the block cannot misalign them.
+ * Geometry and frame selection are pure and unit tested; the Solid component
+ * only colors rows. Rows are returned at full width (padded, never trimmed) so
+ * centering a block cannot misalign it.
  */
 
-/** Grid height of both glyphs: the block occupies exactly four lines. */
+/** Grid height of every glyph: the block occupies exactly four lines. */
 export const DOT_HEIGHT = 4
-/** Grid width rows are padded to; both glyphs are centered inside it. */
+/** Grid width of the single-infinity glyph and of the check. */
 export const DOT_WIDTH = 14
-/** Number of lit dots orbiting the infinity path. */
+/** Grid width of the two-infinity glyph (11 + 2 gap + 11). */
+export const DOT_WIDTH_DOUBLE = 24
+/** Empty columns between the two infinitities of the delegated glyph. */
+const GLYPH_GAP = 2
+/** Number of lit dots orbiting each infinity path. */
 export const DOT_TRAIL = 3
-/** Faint dot of the running glyph. */
+/** Faint dot of a running glyph. */
 export const DOT_FAINT = "·"
 /** Lit dot (orbit trail and the finished check). */
 export const DOT_LIT = "●"
@@ -83,41 +90,88 @@ export function trailIndices(tick: number, length = INFINITY_PATH.length, trail 
   return indices
 }
 
-function renderGlyph(cells: readonly DotCell[], lit: ReadonlySet<number>, width: number): readonly string[] {
-  const glyphWidth = Math.max(...cells.map((cell) => cell.x)) + 1
-  const offset = Math.max(0, Math.round((width - glyphWidth) / 2))
+/** The glyph at its natural width, no padding: `[y][x]` of markers. */
+function glyphGrid(cells: readonly DotCell[], lit: ReadonlySet<number>): string[][] {
+  const width = Math.max(...cells.map((cell) => cell.x)) + 1
   const grid: string[][] = Array.from({ length: DOT_HEIGHT }, () => Array.from({ length: width }, () => " "))
-
   for (let index = 0; index < cells.length; index++) {
     const cell = cells[index]
-    const x = cell.x + offset
-    if (x < 0 || x >= width || cell.y < 0 || cell.y >= DOT_HEIGHT) continue
-    grid[cell.y][x] = lit.has(index) ? DOT_LIT : DOT_FAINT
+    if (cell.x < 0 || cell.x >= width || cell.y < 0 || cell.y >= DOT_HEIGHT) continue
+    grid[cell.y][cell.x] = lit.has(index) ? DOT_LIT : DOT_FAINT
   }
-  return grid.map((row) => row.join(""))
+  return grid
+}
+
+/** Glues one or two grids side by side, `gap` blank columns apart. */
+function stitch(grids: readonly string[][][], gap: number): string[] {
+  const rows = Math.max(...grids.map((grid) => grid.length))
+  return Array.from({ length: rows }, (_, index) => {
+    const spacer = Array.from({ length: gap }, () => " ")
+    return grids
+      .map((grid, position) => (position === 0 ? [] : spacer).concat(grid[index] ?? []))
+      .reduce((all, cells) => all.concat(cells), [] as string[])
+      .join("")
+  })
+}
+
+/**
+ * Centers rows inside `width`, padding both sides and never trimming. Keeping
+ * every row of a frame the same width is what lets the renderer center the
+ * block without shearing the glyph.
+ */
+function centerRows(rows: readonly string[], width: number): readonly string[] {
+  const content = rows.reduce((max, row) => Math.max(max, row.length), 0)
+  if (content >= width) return rows.map((row) => row.slice(0, width).padEnd(width, " "))
+  const padding = " ".repeat(Math.round((width - content) / 2))
+  return rows.map((row) => (padding + row).padEnd(width, " "))
+}
+
+function infinityGrid(tick: number): string[][] {
+  return glyphGrid(INFINITY_PATH, new Set(trailIndices(tick)))
 }
 
 /** Four rows of the running glyph: faint infinity plus the lit orbit trail. */
 export function runningRows(tick: number, width = DOT_WIDTH): readonly string[] {
-  return renderGlyph(INFINITY_PATH, new Set(trailIndices(tick)), width)
+  return centerRows(stitch([infinityGrid(tick)], GLYPH_GAP), width)
+}
+
+/**
+ * Four rows for a session that is idle while its family still works: two
+ * infinitities half a loop apart, so they read as two separate workers rather
+ * than one glyph redrawn.
+ */
+export function waitingRows(tick: number, width = DOT_WIDTH_DOUBLE): readonly string[] {
+  const half = Math.floor(INFINITY_PATH.length / 2)
+  return centerRows(stitch([infinityGrid(tick), infinityGrid(tick + half)], GLYPH_GAP), width)
 }
 
 /** Four rows of the finished glyph: the bold check, every dot lit. */
 export function doneRows(width = DOT_WIDTH): readonly string[] {
-  return renderGlyph(CHECK_PATH, new Set(CHECK_PATH.map((_, index) => index)), width)
+  return centerRows(stitch([glyphGrid(CHECK_PATH, new Set(CHECK_PATH.map((_, index) => index)))], GLYPH_GAP), width)
 }
 
-export type DotMatrixState = "running" | "done" | "hidden"
+export type DotMatrixState = "running" | "waiting" | "done" | "hidden"
 
 /**
  * Which glyph a session shows.
  *
- * An undefined activity means the session never ran in this TUI generation
- * (hide rather than claim anything). A running session, or one whose activity
- * is not `idle`, is working; an `idle` activity that exists has finished.
+ * - this session is running, or its activity is not `idle` -> `running`;
+ * - otherwise, if anything else in its session family is still running (a
+ *   delegated subagent), the turn is not over -> `waiting`;
+ * - an undefined activity means the session never ran in this TUI generation,
+ *   so hide rather than claim anything;
+ * - an `idle` activity that exists has finished -> `done`.
+ *
+ * `familyBusy` defaults to `running`, which reproduces the single-session
+ * behaviour when the caller has no family information.
  */
-export function dotMatrixState(kind: string | undefined, sessionRunning: boolean): DotMatrixState {
-  if (kind === undefined) return sessionRunning ? "running" : "hidden"
-  if (sessionRunning || kind !== "idle") return "running"
+export function dotMatrixState(
+  kind: string | undefined,
+  running: boolean,
+  familyBusy: boolean = running,
+): DotMatrixState {
+  if (running || (kind !== undefined && kind !== "idle")) return "running"
+  if (familyBusy) return "waiting"
+  if (kind === undefined) return "hidden"
   return "done"
 }

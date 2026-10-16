@@ -6,11 +6,13 @@ import {
   DOT_LIT,
   DOT_TRAIL,
   DOT_WIDTH,
+  DOT_WIDTH_DOUBLE,
   INFINITY_PATH,
   doneRows,
   dotMatrixState,
   runningRows,
   trailIndices,
+  waitingRows,
 } from "../src/parse/dotmatrix.ts"
 
 const cells = (rows: readonly string[]): string => rows.join("")
@@ -80,7 +82,29 @@ test("doneRows draws the bold check, all dots lit", () => {
   assert.equal(count(cells(rows), "·"), 0)
 })
 
-test("dotMatrixState hides, orbits, or checks based on the activity", () => {
+test("waitingRows draws two infinitities, one trail each", () => {
+  const rows = waitingRows(0)
+  assert.equal(rows.length, DOT_HEIGHT)
+  for (const row of rows) assert.equal(row.length, DOT_WIDTH_DOUBLE)
+
+  const joined = rows.join("")
+  assert.equal(count(joined, DOT_LIT), DOT_TRAIL * 2)
+  assert.equal(count(joined, "·"), INFINITY_PATH.length * 2 - DOT_TRAIL * 2)
+
+  // Each half is its own glyph, so neither side carries the other's trail.
+  const left = rows.map((row) => row.slice(0, 12)).join("")
+  const right = rows.map((row) => row.slice(12)).join("")
+  assert.equal(count(left, DOT_LIT), DOT_TRAIL)
+  assert.equal(count(right, DOT_LIT), DOT_TRAIL)
+
+  // Half a loop apart, so the two loops do not move in lockstep.
+  assert.notDeepEqual(
+    rows.map((row) => row.slice(0, 11)),
+    rows.map((row) => row.slice(13)),
+  )
+})
+
+test("dotMatrixState hides, orbits, doubles, or checks", () => {
   assert.equal(dotMatrixState(undefined, false), "hidden")
   assert.equal(dotMatrixState(undefined, true), "running")
   assert.equal(dotMatrixState("idle", true), "running")
@@ -88,4 +112,15 @@ test("dotMatrixState hides, orbits, or checks based on the activity", () => {
   assert.equal(dotMatrixState("thinking", false), "running")
   assert.equal(dotMatrixState("writing", false), "running")
   assert.equal(dotMatrixState("tool", false), "running")
+})
+
+test("dotMatrixState waits while the rest of the family still runs", () => {
+  // Idle parent, subagent working: neither done nor plainly running.
+  assert.equal(dotMatrixState("idle", false, true), "waiting")
+  assert.equal(dotMatrixState(undefined, false, true), "waiting")
+  // The parent working wins, even with delegates in flight.
+  assert.equal(dotMatrixState("idle", true, true), "running")
+  assert.equal(dotMatrixState("thinking", false, true), "running")
+  // Nothing running anywhere: the turn really is over.
+  assert.equal(dotMatrixState("idle", false, false), "done")
 })

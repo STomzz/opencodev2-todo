@@ -85,11 +85,19 @@
 ## 点阵动画（`src/parse/dotmatrix.ts` + `src/ui/dotmatrix.tsx`）
 
 - 位置：活动面板内，「当前动作」与「待办 / 计划」之间，固定 4 行、水平居中；`showAnimation: false` 可关。
-- 两个字形都画在 14×4 字符网格里（`DOT_WIDTH` / `DOT_HEIGHT`）；行是**定宽补齐**的（不裁尾空格），居中时两个字形不会错位。
+- 三个字形都画在 4 行网格里：单个 ∞ 与对勾是 14 宽（`DOT_WIDTH`），双 ∞ 是 24 宽（`DOT_WIDTH_DOUBLE` = 11 + 2 间隔 + 11）；行是**定宽补齐**的（不裁尾空格），居中时同一帧内不会错位。每行一个 `<box row>` + 分段 `<text wrapMode="none">`，这样行宽变化不会把 4 行折成 8 行。
 - 运行中：16 点 ∞ 轨迹 + 3 点拖尾巡游，笔顺按真实 ∞ 走——左环逆时针 → **左下斜穿到右上**（`(3,3)→(5,2)→(6,1)→(7,0)`）→ 右环顺时针 → **右下斜穿回左上**；交叉处是 2×2 的"结"（`(5,1)(6,1)(5,2)(6,2)`，两条斜线各用其一）。
+- 等待子代理：**两个 ∞ 并排**（`waitingRows`），右侧那个相位差半圈（`tick + 8`）——不到一圈，所以一眼能看出是两个独立 worker 在转，而不是同一个字形重绘。
 - 已完成：16 点加粗对勾（双格厚度），success 色常驻；运行开始后自动切回 ∞。
-- 状态来源：复用活动状态（`activity.kind` + `session.status`），`dotMatrixState()` 判定——无活动记录 → 隐藏（没跑过就不显示，不猜）；running 或 kind ≠ idle → ∞；kind = idle → 对勾。
-- 帧计数器：`activity-frame`（memory store），140ms 一跳（≈2.2s/圈）；**只在有会话忙时更新**，idle 时跳更新避免空转重绘；对勾静态，不需要帧。
+- 状态来源：`dotMatrixState(kind, running, familyBusy)`，三个入参都来自面板已有的读——`activity.kind`（本会话活动）、`session.status(self)`、以及**家族**忙不忙：
+  - 本会话 running 或 kind ≠ idle → `running`（单 ∞）；
+  - 否则若家族里还有别的会话 running → `waiting`（双 ∞）；
+  - 否则 kind 有值 → `done`（对勾）、kind 无值（本 TUI 从没跑过）→ `hidden`。
+- **家族判定**（OMO 这类多 agent 架构的关键）：子代理跑在**自己的 session** 里，与派它的会话共享 root。用 TUI 自己那对 API：`session.root(id)` → `session.family(root)` → 任一 `session.status(id) === "running"`（就是 TUI 标签页"忙"指示用的同一套）。两个调用都做了可选兜底：宿主没有这两个方法时退化成只看本会话，绝不在渲染里抛错。判据只看 `status === "running"`，**不**把 permission/question 的 pending 当忙——那是"等人"，不是"在跑"。
+- 帧计数器：`activity-frame`（memory store），140ms 一跳（≈2.2s/圈）；**只在有会话忙时更新**，idle 时跳更新避免空转重绘；对勾静态，不需要帧。子代理会话自己会发事件，所以它忙就能推动动画。
+- 字符默认 `·`（暗点）/ `●`（亮点）；`asciiDots: true` 替换为 `.` / `o`。颜色走现有 `palette()`：暗点 `muted`、巡游点 `accent`、对勾 `success`。
+- 侧栏窄于 24 列时双 ∞ 会被截断（`wrapMode="none"` 保证仍是 4 行，不至于折行成 8 行）；`showAnimation: false` 可整体关掉。
+- 早期试过圆环、整条正弦路径等版本：4 行高度下圆环读不出"持续工作"，整条路径会糊成方块，最终选了双环共用中轴的 ∞。
 - 字符默认 `·`（暗点）/ `●`（亮点）；`asciiDots: true` 替换为 `.` / `o`。颜色走现有 `palette()`：暗点 `muted`、巡游点 `accent`、对勾 `success`。
 - 早期试过圆环、整条正弦路径等版本：4 行高度下圆环读不出"持续工作"，整条路径会糊成方块，最终选了双环共用中轴的 ∞。
 

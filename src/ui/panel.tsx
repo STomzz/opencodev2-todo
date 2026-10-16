@@ -17,6 +17,8 @@ export interface PanelProps {
   readonly messages: (sessionID: string) => readonly MessageLike[] | undefined
   readonly title: (sessionID: string) => string | undefined
   readonly running: (sessionID: string) => boolean
+  /** True when any session of the same family (subagents included) is running. */
+  readonly familyBusy: (sessionID: string) => boolean
   readonly now: () => number
   /** Animation frame for the dot-matrix glyph; only advances while busy. */
   readonly animationTick: () => number
@@ -83,6 +85,7 @@ export function Panel(props: PanelProps) {
         <DotMatrix
           kind={props.activity(props.sessionID)?.kind}
           running={props.running(props.sessionID)}
+          familyBusy={props.familyBusy(props.sessionID)}
           tick={props.animationTick()}
           palette={colors()}
           ascii={props.options.asciiDots}

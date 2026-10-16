@@ -48,8 +48,9 @@ export default Plugin.define({
       })
     }, 1_000)
 
-    // The dot-matrix glyph only moves while a session is busy. Idle ticks are
-    // skipped entirely, so a finished session costs no re-renders.
+    // The dot-matrix glyph only moves while some session is busy. Idle ticks are
+    // skipped entirely, so a finished session costs no re-renders. Subagent
+    // sessions emit their own events, so their activity shows up here too.
     const animator = setInterval(() => {
       const busy = Object.values(activities as Record<string, ActivityState>).some(
         (activity) => activity && activity.kind !== "idle",
@@ -102,6 +103,23 @@ export default Plugin.define({
         })
     }
 
+    // A subagent runs in its own session but shares a root with whoever spawned
+    // it, and `session.family` is that whole tree (the TUI uses the same pair for
+    // its tab indicator). So a parent that has gone idle while its delegates keep
+    // working still counts as busy, which is what drives the two-infinity glyph.
+    // Both calls are optional: if a host build lacks them we fall back to
+    // this session alone instead of throwing inside a render.
+    const familyBusy = (sessionID: string) => {
+      const client = context.data.session as unknown as {
+        root?: (id: string) => string | undefined
+        family?: (id: string) => readonly string[] | undefined
+      }
+      const root = client.root?.(sessionID) ?? sessionID
+      const members = client.family?.(root) ?? []
+      const ids = members.length === 0 ? [root] : members.includes(root) ? members : [root, ...members]
+      return ids.some((id) => context.data.session.status(id) === "running")
+    }
+
     const stopSlot = context.ui.slot({
       append: "sidebar.content",
       render: (input) => (
@@ -113,6 +131,7 @@ export default Plugin.define({
           messages={(sessionID) => context.data.session.message.list(sessionID) as unknown as MessageLike[]}
           title={(sessionID) => context.data.session.get(sessionID)?.title}
           running={(sessionID) => context.data.session.status(sessionID) === "running"}
+          familyBusy={familyBusy}
           now={() => clock.now}
           animationTick={() => animation.tick}
           dismissed={(sessionID) => dismissed[sessionID]}
