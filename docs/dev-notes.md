@@ -48,7 +48,8 @@
 - **记录形状（关键）**：直连调用 → 顶层 `todowrite` part，待办在 `state.input.todos`（注意 DB 里 tool part 的工具名字段是 **`name`**；V1 历史行是 `tool`；`state.status` 成功为 `completed`、失败为 `error` 且带 `state.error.message`）。嵌套调用 → `execute` part 的 `state.metadata.toolCalls`（`{"tool":"todowrite","status":"completed","input":{"todos":[…]}}`）。面板 `extractTodos` 两种形状都读（`part.name === "todowrite" || part.tool === "todowrite"`），且**不看 status**——所以即使调用报错，面板仍能读出错链 part 里的 `state.input`（修注册前的"带病工作"就是靠这个）。
 - `pinned: true` 的语义：让工具常驻 Code Mode 目录列表、不被目录预算裁掉（二进制里 `options.pinned` → catalog entry 的 `pinned` 标记）；**不是**"变成直连工具"的开关。直连注册下它没有意义，已去掉。
 - 权限：`options.permission: "todowrite"` + 配置 `{ "action": "todowrite", "resource": "*", "effect": "allow" }`。`snapshot` 里 permission deny 会把工具整个滤掉，报的是另一条分支 `Tool is not available for this request: X`（与 `No tool named` 区分开）。
-- 同类坑（顺带记录，本机 DB 统计）：`No tool named "bash"` 16 次（V2 把 `bash` 改名 `shell`，模型按 V1 习惯喊 `bash`）、`exec` 5、`execute` 4、`gh_grep.searchGitHub` 1（目录工具被当原生名喊）、`tools.todowrite` 1（把 JS 目录路径当原生工具名）。凡"模型知道名字、但该工具不在原生 `definitions` 里"的，都落这条分支。
+- 同类坑（顺带记录，本机 DB 统计）：`No tool named "bash"` 16 次、`exec` 5、`execute` 4、`gh_grep.searchGitHub` 1（目录工具被当原生名喊）、`tools.todowrite` 1（把 JS 目录路径当原生工具名）。凡"模型知道名字、但该工具不在原生 `definitions` 里"的，都落这条分支。
+- `bash` 那些**已定位到源头**（2026-10-16 静态核对 OMO v3.0.3 代码）：技能与两份 AGENTS.md 里 0 处教模型用 V1 名，是 OMO 包内 `WRITABLE_FILE_OPERATIONS_RULES` 等提示词常量直接写了 `bash`（"Use bash for execution and automation"），这些块注入到每个 agent 的提示词里。V2 的工具名是 `shell`，模型照字面喊就命中本分支。详见 `~/.config/opencode/AGENTS.md`。
 - 验证：`opencode run --auto "<要求调用 todowrite 并把返回原文贴出>"` → 查该会话消息里有没有 `name: "todowrite"` 且 `state.status: "completed"` 的 part；修好前该位置全是 `status: "error"` + `No tool named`。
 - 语义与 V1 一致：整表替换、不增量；空数组 = 清空（面板会隐藏）。
 - 验证：Code Mode 会话里 `await tools.todowrite({ todos: […] })` → 该 `execute` part 的 `metadata.toolCalls` 有完整入参 → `extractTodos` 返回 `source: "todo"`；直连会话则查顶层 `todowrite` part；日志里 `role=server` 的 plugin 加载无 warn。
