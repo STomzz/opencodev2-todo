@@ -93,7 +93,7 @@
   - 本会话 running 或 kind ≠ idle → `running`（单 ∞）；
   - 否则若家族里还有别的会话 running → `waiting`（双 ∞）；
   - 否则 kind 有值 → `done`（对勾）、kind 无值（本 TUI 从没跑过）→ `hidden`。
-- **家族判定**（OMO 这类多 agent 架构的关键）：子代理跑在**自己的 session** 里，与派它的会话共享 root。用 TUI 自己那对 API：`session.root(id)` → `session.family(root)` → 任一 `session.status(id) === "running"`（就是 TUI 标签页"忙"指示用的同一套）。两个调用都做了可选兜底：宿主没有这两个方法时退化成只看本会话，绝不在渲染里抛错。判据只看 `status === "running"`，**不**把 permission/question 的 pending 当忙——那是"等人"，不是"在跑"。
+- **家族判定**（OMO 这类多 agent 架构的关键）：子代理跑在**自己的 session** 里，与派它的会话共享 root。用 TUI 自己那对 API：`session.root(id)` → `session.family(root)` → 任一 `session.status(id) === "running"`（就是 TUI 标签页"忙"指示用的同一套）。两个调用都做了可选兜底：宿主没有这两个方法时退化成只看本会话，绝不在渲染里抛错。判据只看 `status === "running"`，**不**把 permission/question 的 pending 当忙——那是"等人"，不是"在跑"。**已实测（2026-10-16）**：主 agent 空闲 + 后台子代理在跑 → 侧栏确实显示双 ∞。
 - 帧计数器：`activity-frame`（memory store），140ms 一跳（≈2.2s/圈）；**只在有会话忙时更新**，idle 时跳更新避免空转重绘；对勾静态，不需要帧。子代理会话自己会发事件，所以它忙就能推动动画。
 - 字符默认 `·`（暗点）/ `●`（亮点）；`asciiDots: true` 替换为 `.` / `o`。颜色走现有 `palette()`：暗点 `muted`、巡游点 `accent`、对勾 `success`。
 - 侧栏窄于 24 列时双 ∞ 会被截断（`wrapMode="none"` 保证仍是 4 行，不至于折行成 8 行）；`showAnimation: false` 可整体关掉。
