@@ -42,10 +42,14 @@
 
 - 背景：V2 没有 todo 工具 → 模型没有地方写真实进度、面板 `待办 x/y` 永远点不亮。方案是把 V1（`packages/opencode/src/tool/todo.ts` + `todowrite.txt`）原样搬回来。
 - 注册：`Plugin.define({ id, setup })`（`@opencode/plugin` 的 promise 入口）→ `ctx.tool.transform((editor) => editor.add({...}))`；`input` 是普通 JSON Schema（V1 zod 的等价物），`execute` 返回 `{ content: JSON.stringify(todos, null, 2), metadata: { todos } }`（与 V1 输出一致）。
-- **注册为 Code Mode 目录工具**：`options: { permission: "todowrite", codemode: true, pinned: true }`。实测（2026-09-24）：`codemode: false` 的直连注册在 Code Mode 会话（本 TUI 主工作流）里**完全不可见**——目录没有、工具列表没有、`tools.todowrite` 报 `Unknown tool`；只有 `opencode run` 那种原生会话能直接调用，覆盖不到主工作流。
-- **记录形状（关键）**：嵌套调用不会生成自己的 tool part，但 `execute` part 的 `state.metadata.toolCalls` 会带上嵌套调用的名称、状态和**完整入参**（Core 给 TUI 的官方机制；DB 实测 `{"tool":"todowrite","status":"completed","input":{"todos":[…]}}`）。面板 `extractTodos` 两种形状都读：顶层 `todowrite` part（直连/V1 历史）或 `execute` metadata 里最后一条 `todowrite`；metadata 带 `truncated` 标志，被截断时自然回落隐藏（宁缺毋滥）。
-- `pinned: true` 的语义：让工具常驻 Code Mode 目录列表、不被目录预算裁掉（二进制里 `options.pinned` → catalog entry 的 `pinned` 标记）；**不是**"变成直连工具"的开关。
-- 权限：`options.permission: "todowrite"` + 配置里 `{ "action": "todowrite", "resource": "*", "effect": "allow" }`；嵌套调用仍会各自校验权限（官方 Code Mode 文档），allow 必须留着。
+- **注册为直连工具**：`options: { permission: "todowrite", codemode: false }`。V2 的插件工具集是**互斥**两套（二进制 `Tool.snapshot` 实测）：`codemode === false` → 直接进请求的 `definitions`（与内置 `shell`/`read` 同路，模型可原生调用）；`codemode !== false`（`true` 或不设）→ 只进 `execute` 的 Code Mode 目录（`codeModeCatalog`）。同一个 tool id 只能属于其中一套。
+- ⚠️ **纠错（2026-10-16）**：早期（2026-09-24）"直连注册在 Code Mode 会话里完全不可见——目录没有、工具列表也没有"是**误判**。当时只验证了目录路线（`tools.todowrite` 报 `Unknown tool`），没验证原生调用；实际上直连工具和内置工具一样会出现在 `definitions` 里。代价是"只进目录"的注册让模型的**每次原生调用**都失败：本机 DB 里 `No tool named "todowrite"` 共 24 次（2026-09-22..10-16），`state.status === "completed"` 的顶层 `todowrite` part 为 0。
+- 为什么模型会原生调用：工作区 `AGENTS.md` 明确要求"多步任务用 `todowrite` 维护待办"，模型据此直接发起工具调用，而不是去写 `tools.todowrite(...)`。注册成目录工具反而让这个指令变成"喊一个不存在的工具"。
+- **记录形状（关键）**：直连调用 → 顶层 `todowrite` part，待办在 `state.input.todos`（注意 DB 里 tool part 的工具名字段是 **`name`**；V1 历史行是 `tool`；`state.status` 成功为 `completed`、失败为 `error` 且带 `state.error.message`）。嵌套调用 → `execute` part 的 `state.metadata.toolCalls`（`{"tool":"todowrite","status":"completed","input":{"todos":[…]}}`）。面板 `extractTodos` 两种形状都读（`part.name === "todowrite" || part.tool === "todowrite"`），且**不看 status**——所以即使调用报错，面板仍能读出错链 part 里的 `state.input`（修注册前的"带病工作"就是靠这个）。
+- `pinned: true` 的语义：让工具常驻 Code Mode 目录列表、不被目录预算裁掉（二进制里 `options.pinned` → catalog entry 的 `pinned` 标记）；**不是**"变成直连工具"的开关。直连注册下它没有意义，已去掉。
+- 权限：`options.permission: "todowrite"` + 配置 `{ "action": "todowrite", "resource": "*", "effect": "allow" }`。`snapshot` 里 permission deny 会把工具整个滤掉，报的是另一条分支 `Tool is not available for this request: X`（与 `No tool named` 区分开）。
+- 同类坑（顺带记录，本机 DB 统计）：`No tool named "bash"` 16 次（V2 把 `bash` 改名 `shell`，模型按 V1 习惯喊 `bash`）、`exec` 5、`execute` 4、`gh_grep.searchGitHub` 1（目录工具被当原生名喊）、`tools.todowrite` 1（把 JS 目录路径当原生工具名）。凡"模型知道名字、但该工具不在原生 `definitions` 里"的，都落这条分支。
+- 验证：`opencode run --auto "<要求调用 todowrite 并把返回原文贴出>"` → 查该会话消息里有没有 `name: "todowrite"` 且 `state.status: "completed"` 的 part；修好前该位置全是 `status: "error"` + `No tool named`。
 - 语义与 V1 一致：整表替换、不增量；空数组 = 清空（面板会隐藏）。
 - 验证：Code Mode 会话里 `await tools.todowrite({ todos: […] })` → 该 `execute` part 的 `metadata.toolCalls` 有完整入参 → `extractTodos` 返回 `source: "todo"`；直连会话则查顶层 `todowrite` part；日志里 `role=server` 的 plugin 加载无 warn。
 - 取舍：模型可见工具面多一个工具（首次请求前缀变化、之后缓存照常命中）；描述文本每请求占少量 token。面板本身仍是零 prompt 影响。

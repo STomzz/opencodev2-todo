@@ -2,8 +2,8 @@
  * Real todo extraction from the model's own `todowrite` tool calls.
  *
  * The V2 build ships no todo tool, so this repository's server plugin
- * (`index.ts`) registers V1's `todowrite` again as a Code Mode catalog tool;
- * every call carries the full list with
+ * (`index.ts`) registers V1's `todowrite` again as a direct tool; every call
+ * carries the full list with
  * `status: "pending" | "in_progress" | "completed" | "cancelled"`, and the
  * newest call in the message cache is the authoritative plan — no heuristics,
  * and the check marks actually move while the session works.

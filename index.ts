@@ -6,13 +6,16 @@
  * available`). Registering the same tool name, description and parameters V1
  * used closes that gap for both the model and the activity panel.
  *
- * Registered as a Code Mode catalog tool (`codemode: true`): Code Mode sessions
- * can only reach tools that appear in the `execute` catalog, so a direct tool
- * (`codemode: false`) is invisible there — measured 2026-09-24, `tools.todowrite`
- * answered `Unknown tool`. Nested calls keep their full input in the `execute`
- * part's `metadata.toolCalls`, and the activity panel reads the todos from
- * there; sessions that call the tool directly still record a plain `todowrite`
- * tool part, which the panel understands too.
+ * Registered as a **direct** tool (`codemode: false`). V2 splits plugin tools
+ * into two disjoint sets: `codemode: false` tools reach the model like built-ins,
+ * while everything else (`true` or unset) is only reachable from inside
+ * `execute`'s Code Mode catalog. Models here call `todowrite` as an ordinary
+ * tool call — the workspace AGENTS.md tells them to track multi-step work with
+ * it — so a catalog-only registration made every one of those calls fail with
+ * `No tool named "todowrite" is currently available` (24 recorded failures
+ * 2026-09-22..2026-10-16, zero successful direct calls). As a direct tool it
+ * appears in the model's tool list, the call is recorded as a top-level
+ * `todowrite` part, and the panel reads the list from that part's `state.input`.
  *
  * Load it from `plugins` in `opencode.json(c)` (a server plugin, unlike the
  * panel which is a CLI plugin in `cli.json`):
@@ -38,9 +41,11 @@ export default Plugin.define({
         // A plain JSON Schema object; the runtime validates it and hands the
         // executor `unknown`, which `normalizeTodos` re-checks defensively.
         input: TODO_INPUT_SCHEMA as never,
-        // Code Mode catalog tool (see the header); `pinned` keeps it listed in
-        // the catalog instead of being hidden by catalog budgeting.
-        options: { permission: "todowrite", codemode: true, pinned: true },
+        // Direct tool (see the header): catalog-only registration made every
+        // native call fail with `No tool named "todowrite"`.
+        // Trade-off: `await tools.todowrite(...)` inside `execute` is then not
+        // available (that JS route is what the catalog-only setup served).
+        options: { permission: "todowrite", codemode: false },
         execute: async (input) => {
           const parsed = normalizeTodos(input)
           if ("error" in parsed) throw new Error(parsed.error)

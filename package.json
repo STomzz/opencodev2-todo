@@ -1,6 +1,6 @@
 {
   "name": "opencode-activity-panel",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "private": true,
   "type": "module",
   "description": "OpenCode V2 plugins: a sidebar activity panel (CLI, zero prompt injection) and a server plugin restoring V1's todowrite tool",
@@ -18,7 +18,7 @@
     "test": "node --test test/*.test.ts"
   },
   "dependencies": {
-    "@opencode/plugin": "2.0.11"
+    "@opencode/plugin": "2.0.27"
   },
   "peerDependencies": {
     "@opentui/core": ">=0.5.10",
@@ -26,8 +26,8 @@
     "solid-js": ">=1.9.0"
   },
   "devDependencies": {
-    "@opentui/core": "0.5.10",
-    "@opentui/solid": "0.5.10",
+    "@opentui/core": "0.6.1",
+    "@opentui/solid": "0.6.1",
     "@types/node": "^22",
     "solid-js": "^1.9.0",
     "typescript": "^5.8.0"

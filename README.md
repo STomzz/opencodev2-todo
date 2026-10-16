@@ -73,8 +73,9 @@ V2 不带 `todowrite` 工具。要让面板的 `待办 x/y` 有真实数据源�
 
 - 同一个包目录、两个入口：服务端用根导出 `index.ts`，CLI 用 `exports["./tui"]`；
 - 工具名、描述、参数、输出与 V1 完全一致（整表替换语义）；模型调用后，面板据此显示 `待办 x/y` 并随执行走动；
-- 注册为 **Code Mode 目录工具**（`codemode: true, pinned: true`）：Code Mode 会话只能调用目录里的工具，直连注册（`codemode: false`）在那种会话里完全不可见（2026-09-24 实测，`tools.todowrite` 报 `Unknown tool`）；
-- **记录形状**：Code Mode 里的调用发生在 `execute` 内，嵌套调用的名称/状态/**完整入参**会写进该 `execute` part 的 `metadata.toolCalls`（Core 给 TUI 的官方机制）；直接调用的会话则留下顶层 `todowrite` part。面板两种形状都读；
+- 注册为 **直连工具**（`codemode: false`）：V2 的插件工具集是互斥两套——`codemode: false` 的工具像内置工具一样直接进模型工具列表，其余（`true` 或不设）只能从 `execute` 的 Code Mode 目录调用。模型是用**普通工具调用**喊 `todowrite` 的（工作区 AGENTS.md 就这么要求），所以早先"只进目录"的注册让每次调用都失败（`No tool named "todowrite"`，本机 DB 记录了 2026-09-22..10-16 共 24 次、成功直连 0 次）；
+- **记录形状**：直连调用留下顶层 `todowrite` part，待办在 `state.input.todos`（面板主路径）；Code Mode 里嵌套调用则写进 `execute` part 的 `metadata.toolCalls`。两种形状面板都读（兼容历史会话）；
+- 取舍：直连注册下**不再**出现在 Code Mode 目录里，`await tools.todowrite(...)`（在 `execute` 内）不可用——那正是早先"只进目录"方案服务的形式，但实测模型并不用它；
 - 已知取舍：模型可见工具面多一个目录工具（首次请求前缀变化一次，之后缓存照常命中）；不需要时从 `plugins` 移除即可。
 
 ## 选项
@@ -131,7 +132,7 @@ docs/dev-notes.md       加载方式、事件表、踩坑记录
 - 日志：`~/.local/share/opencode/log/opencode.log`（`OPENCODE_LOG_LEVEL=DEBUG` 更详细）
 - 面板不显示时先确认侧栏已展开（默认 `<leader>b` 切换）
 - 事件字段可对照 `docs/dev-notes.md` 里的映射表
-- 待办链路快速验证：让模型调用 `todowrite`，再查消息里 `execute` part 的 `metadata.toolCalls`（Code Mode 会话）或顶层 `todowrite` part（直连会话）；面板的 `待办 x/y` 会随最新一次调用更新
+- 待办链路快速验证：让模型调用 `todowrite`，再查消息里顶层 `todowrite` part（`state.input.todos`，`state.status` 应为 `completed`）或 `execute` part 的 `metadata.toolCalls`；面板的 `待办 x/y` 会随最新一次调用更新
 
 ## 卸载
 
